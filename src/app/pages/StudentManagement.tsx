@@ -12,7 +12,7 @@ import {
 const COURSES = ["Computer Science", "Mathematics", "Engineering", "Physics"];
 
 const emptyForm = {
-  firstName: "", lastName: "", email: "", studentId: "", course: "Computer Science",
+  firstName: "", lastName: "", email: "", studentId: "", course: "Computer Science", faceEnrolled: false
 };
 
 export function StudentManagement() {
@@ -70,7 +70,7 @@ export function StudentManagement() {
   const openEdit = (s: Student) => {
     setEditStudent(s);
     const [firstName, ...rest] = s.name.split(" ");
-    setForm({ firstName, lastName: rest.join(" "), email: s.email, studentId: s.studentId, course: s.course });
+    setForm({ firstName, lastName: rest.join(" "), email: s.email, studentId: s.studentId, course: s.course, faceEnrolled: s.faceEnrolled });
     setShowModal(true);
   };
 
@@ -86,7 +86,7 @@ export function StudentManagement() {
         email: form.email,
         studentId: form.studentId,
         course: form.course,
-        faceEnrolled: editStudent?.faceEnrolled ?? false,
+        faceEnrolled: editStudent?.faceEnrolled ?? form.faceEnrolled,
         status: (editStudent?.status ?? "active") as "active" | "inactive",
         attendance: editStudent?.attendance ?? 0,
       };
@@ -126,6 +126,33 @@ export function StudentManagement() {
       console.error("Face enroll error:", err);
     }
   };
+
+  const handleFlaskEnroll = async () => {
+    if (!form.studentId && !form.firstName) {
+        alert("Please enter a SBRN or First Name first!");
+        return;
+    }
+    const targetId = form.studentId || form.firstName;
+    setEnrolling(true);
+    setEnrollStream(`http://localhost:5000/enroll_feed?name=${encodeURIComponent(targetId)}&t=${Date.now()}`);
+
+    // Poll enrollment status until done
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch("http://localhost:5000/enroll_status");
+        const data = await res.json();
+        if (!data.active && data.count >= 100) {
+          clearInterval(poll);
+          setEnrolling(false);
+          setEnrollStream("");
+          setForm({ ...form, faceEnrolled: true });
+        }
+      } catch { /* server busy */ }
+    }, 1000);
+  };
+
+  const [enrolling, setEnrolling] = useState(false);
+  const [enrollStream, setEnrollStream] = useState("");
 
   return (
     <div className="space-y-6">
@@ -194,7 +221,7 @@ export function StudentManagement() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium">Student</th>
-                  <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium">ID</th>
+                  <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium">SBRN</th>
                   <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium hidden md:table-cell">Course</th>
                   <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium hidden lg:table-cell">Face Data</th>
                   <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium hidden sm:table-cell">Attendance</th>
@@ -362,10 +389,10 @@ export function StudentManagement() {
                 />
               </div>
               <div>
-                <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Student ID</label>
+                <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">SBRN</label>
                 <input
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                  placeholder="STU-XXX"
+                  placeholder="SBRN-XXX"
                   value={form.studentId}
                   onChange={(e) => setForm({ ...form, studentId: e.target.value })}
                 />
@@ -383,11 +410,25 @@ export function StudentManagement() {
               {!editStudent && (
                 <div>
                   <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Face Enrollment</label>
-                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-indigo-300 transition-colors cursor-pointer">
-                    <Camera className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                    <p className="text-[0.8125rem] text-slate-600 font-medium">Capture Face Data</p>
-                    <p className="text-[0.75rem] text-slate-400">Click to open camera and capture facial data</p>
-                  </div>
+                  {enrolling && enrollStream ? (
+                    <div className="border-2 border-orange-300 rounded-xl overflow-hidden bg-black">
+                      <img src={enrollStream} alt="Enrolling..." className="w-full aspect-video object-cover" />
+                      <p className="text-center text-orange-500 text-[0.75rem] py-2 animate-pulse">Capturing face data... Look at the camera</p>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={handleFlaskEnroll}
+                      className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${form.faceEnrolled ? "border-emerald-400 bg-emerald-50" : "border-slate-200 hover:border-indigo-300"}`}
+                    >
+                      <Camera className={`w-8 h-8 mx-auto mb-2 ${form.faceEnrolled ? "text-emerald-500" : "text-slate-400"}`} />
+                      <p className={`text-[0.8125rem] font-medium ${form.faceEnrolled ? "text-emerald-700" : "text-slate-600"}`}>
+                        {form.faceEnrolled ? "Face Data Captured! ✓" : "Capture Face Data"}
+                      </p>
+                      <p className={`text-[0.75rem] ${form.faceEnrolled ? "text-emerald-600" : "text-slate-400"}`}>
+                        {form.faceEnrolled ? "Saved in native OpenCV engine" : "Click to start camera capture"}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

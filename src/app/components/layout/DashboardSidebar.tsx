@@ -1,9 +1,10 @@
 import React from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import {
   LayoutDashboard, Users, BookOpen, Camera, FileBarChart, Settings,
-  GraduationCap, CalendarCheck, UserCircle, Clock, Sun, ChevronLeft, ChevronRight
+  GraduationCap, CalendarCheck, UserCircle, Clock, Sun, ChevronLeft, ChevronRight, LogOut
 } from "lucide-react";
+import { supabase } from "../../../../utils/supabase/supabase";
 
 type Role = "admin" | "teacher" | "student";
 
@@ -46,7 +47,13 @@ interface DashboardSidebarProps {
 
 export function DashboardSidebar({ role, collapsed, onToggle }: DashboardSidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const items = navItems[role];
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/login");
+  };
 
   return (
     <aside
@@ -92,8 +99,19 @@ export function DashboardSidebar({ role, collapsed, onToggle }: DashboardSidebar
         })}
       </nav>
 
-      {/* Collapse Toggle */}
-      <div className="p-3 border-t border-slate-100">
+      {/* Actions (Logout + Collapse) */}
+      <div className="p-3 border-t border-slate-100 space-y-1">
+        <button
+          onClick={handleLogout}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors ${
+            collapsed ? "justify-center" : ""
+          }`}
+          title={collapsed ? "Logout" : undefined}
+        >
+          <LogOut className="w-5 h-5" />
+          {!collapsed && <span className="text-[0.875rem] font-medium">Logout</span>}
+        </button>
+
         <button
           onClick={onToggle}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Sun, Eye, EyeOff, ArrowRight, ShieldCheck, GraduationCap, User } from "lucide-react";
+import { supabase } from "../../../utils/supabase/supabase";
 
 const demoCredentials = {
   admin: { email: "admin@sunnyattend.com", password: "admin123" },
@@ -31,22 +32,36 @@ export function LoginPage() {
     setError("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    // Validate credentials
-    const creds = demoCredentials[role];
-    if (email !== creds.email || password !== creds.password) {
-      setError("Invalid email or password. Use the demo credentials shown below.");
+    if (!email || !password) {
+      setError("Please enter both email and password.");
       return;
     }
 
     setLoading(true);
-    setTimeout(() => {
+    
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) throw authError;
+
+      if (data.session) {
+        // Assume role is stored in user metadata, if not default to student
+        const userRole = data.session.user.user_metadata?.role || role;
+        navigate(`/${userRole}`);
+      }
+    } catch (err: any) {
+      console.error("Login error:", err);
+      setError(err.message || "Failed to sign in. Please check your credentials.");
+    } finally {
       setLoading(false);
-      navigate(`/${role}`);
-    }, 800);
+    }
   };
 
   return (

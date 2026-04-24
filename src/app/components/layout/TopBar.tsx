@@ -1,5 +1,6 @@
 import React from "react";
-import { Bell, Search, ChevronDown } from "lucide-react";
+import { Bell, Search, ChevronDown, Camera } from "lucide-react";
+import { useNavigate } from "react-router";
 
 interface TopBarProps {
   title: string;
@@ -9,6 +10,16 @@ interface TopBarProps {
 }
 
 export function TopBar({ title, userName, userRole, sidebarWidth }: TopBarProps) {
+  const navigate = useNavigate();
+
+  const handleLaunchScanner = () => {
+    // Navigate to the camera page under the current role's layout
+    const role = userRole.toLowerCase();
+    if (role === "admin" || role === "teacher") {
+      navigate(`/${role}/camera`);
+    }
+  };
+
   return (
     <header
       className="fixed top-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 z-30 flex items-center justify-between px-6 transition-all duration-300"
@@ -16,6 +27,16 @@ export function TopBar({ title, userName, userRole, sidebarWidth }: TopBarProps)
     >
       <h1 className="text-[1.125rem] text-slate-900" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 600 }}>{title}</h1>
       <div className="flex items-center gap-4">
+        
+        {/* Scanner Launcher */}
+        <button
+          onClick={handleLaunchScanner}
+          className="flex items-center gap-2 px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-[0.8125rem] hover:bg-emerald-200 transition-colors font-medium border border-emerald-200"
+        >
+          <Camera className="w-4 h-4" />
+          Live Scanner
+        </button>
+
         {/* Search */}
         <div className="relative hidden md:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

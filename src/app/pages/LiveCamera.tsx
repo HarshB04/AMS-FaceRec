@@ -1,51 +1,60 @@
-import React, { useState, useEffect } from "react";
-import { Camera, Video, Pause, Play, Download, RefreshCw, Users, CheckCircle2, Clock, XCircle, Maximize2, Settings } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Camera, Pause, Play, Download, RefreshCw, Users, CheckCircle2, Clock, XCircle, Maximize2, Settings, Power } from "lucide-react";
 import { StatusBadge } from "../components/shared/StatusBadge";
 
 interface RecognizedStudent {
-  id: string;
   name: string;
-  studentId: string;
   confidence: number;
   time: string;
-  status: "present" | "late";
 }
 
-const mockRecognized: RecognizedStudent[] = [
-  { id: "1", name: "Sarah Johnson", studentId: "STU-001", confidence: 98.5, time: "9:00:12 AM", status: "present" },
-  { id: "2", name: "Michael Chen", studentId: "STU-002", confidence: 96.2, time: "9:00:15 AM", status: "present" },
-  { id: "3", name: "Emily Davis", studentId: "STU-003", confidence: 97.8, time: "9:00:23 AM", status: "present" },
-  { id: "4", name: "James Wilson", studentId: "STU-004", confidence: 95.1, time: "9:01:05 AM", status: "present" },
-  { id: "5", name: "Sophia Martinez", studentId: "STU-005", confidence: 99.1, time: "9:05:33 AM", status: "present" },
-  { id: "6", name: "Robert Brown", studentId: "STU-006", confidence: 94.7, time: "9:12:41 AM", status: "late" },
-  { id: "7", name: "Lisa Thompson", studentId: "STU-007", confidence: 97.3, time: "9:13:22 AM", status: "late" },
-];
+const FLASK_URL = "http://localhost:5000";
 
 export function LiveCamera() {
-  const [isRecording, setIsRecording] = useState(true);
-  const [recognized, setRecognized] = useState<RecognizedStudent[]>(mockRecognized.slice(0, 3));
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [recognized, setRecognized] = useState<RecognizedStudent[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [selectedCourse, setSelectedCourse] = useState("CS-301");
+  const [serverOnline, setServerOnline] = useState(false);
+  const [streamUrl, setStreamUrl] = useState("");
+  const imgRef = useRef<HTMLImageElement>(null);
 
+  // Check if Flask server is online
   useEffect(() => {
-    if (!isRecording) return;
+    const check = async () => {
+      try {
+        const res = await fetch(FLASK_URL);
+        setServerOnline(res.ok);
+      } catch {
+        setServerOnline(false);
+      }
+    };
+    check();
+    const interval = setInterval(check, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Timer
+  useEffect(() => {
+    if (!isStreaming) return;
     const timer = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(timer);
-  }, [isRecording]);
+  }, [isStreaming]);
 
-  // Simulate progressive recognition
+  // Poll recognized students from Flask
   useEffect(() => {
-    if (!isRecording) return;
-    const interval = setInterval(() => {
-      setRecognized((prev) => {
-        if (prev.length < mockRecognized.length) {
-          return [...prev, mockRecognized[prev.length]];
-        }
-        return prev;
-      });
-    }, 3000);
+    if (!isStreaming) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${FLASK_URL}/recognized`);
+        const data = await res.json();
+        setRecognized(data);
+      } catch {
+        // server might be busy
+      }
+    }, 2000);
     return () => clearInterval(interval);
-  }, [isRecording]);
+  }, [isStreaming]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, "0");
@@ -53,13 +62,35 @@ export function LiveCamera() {
     return `${m}:${s}`;
   };
 
+  const startStream = () => {
+    setIsStreaming(true);
+    setElapsed(0);
+    setRecognized([]);
+    setStreamUrl(`${FLASK_URL}/video_feed?t=${Date.now()}`);
+  };
+
+  const stopStream = async () => {
+    setIsStreaming(false);
+    try {
+      await fetch(`${FLASK_URL}/stop`, { method: "POST" });
+    } catch { /* */ }
+    setStreamUrl("");
+  };
+
   const totalStudents = 32;
-  const presentCount = recognized.filter((r) => r.status === "present").length;
-  const lateCount = recognized.filter((r) => r.status === "late").length;
-  const absentCount = totalStudents - recognized.length;
+  const presentCount = recognized.length;
+  const absentCount = totalStudents - presentCount;
 
   return (
     <div className="space-y-6">
+      {/* Server Status Banner */}
+      {!serverOnline && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-[0.8125rem]">
+          <Power className="w-4 h-4 flex-shrink-0" />
+          Python Face Engine is offline. Run <code className="bg-amber-100 px-1.5 py-0.5 rounded text-[0.75rem]">python server.py</code> in the <code className="bg-amber-100 px-1.5 py-0.5 rounded text-[0.75rem]">face_engine</code> folder.
+        </div>
+      )}
+
       {/* Controls Bar */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -73,23 +104,24 @@ export function LiveCamera() {
             <option value="CS-201">CS-201 - OOP</option>
           </select>
           <div className="flex items-center gap-2">
-            {isRecording && <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />}
+            {isStreaming && <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />}
             <span className="text-[0.8125rem] text-slate-600" style={{ fontWeight: 500 }}>
-              {isRecording ? "Recording" : "Paused"} &middot; {formatTime(elapsed)}
+              {isStreaming ? "Scanning" : "Stopped"} &middot; {formatTime(elapsed)}
             </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsRecording(!isRecording)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[0.8125rem] transition-colors ${
-              isRecording
+            onClick={isStreaming ? stopStream : startStream}
+            disabled={!serverOnline}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[0.8125rem] transition-colors disabled:opacity-40 ${
+              isStreaming
                 ? "bg-red-50 text-red-600 hover:bg-red-100"
                 : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
             }`}
           >
-            {isRecording ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {isRecording ? "Pause" : "Resume"}
+            {isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {isStreaming ? "Stop" : "Start Scanning"}
           </button>
           <button className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-[0.8125rem] hover:bg-indigo-700 transition-colors">
             <Download className="w-4 h-4" /> Export
@@ -111,7 +143,7 @@ export function LiveCamera() {
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
           <Clock className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-          <p className="text-[1.25rem] text-amber-600" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>{lateCount}</p>
+          <p className="text-[1.25rem] text-amber-600" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>0</p>
           <p className="text-[0.75rem] text-slate-500">Late</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
@@ -126,41 +158,29 @@ export function LiveCamera() {
         {/* Camera Feed */}
         <div className="lg:col-span-3">
           <div className="bg-slate-900 rounded-2xl overflow-hidden relative aspect-video border-2 border-slate-800 shadow-2xl">
-            {/* Simulated camera feed with glassmorphism overlay */}
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-              <div className="text-center">
-                <Camera className="w-16 h-16 text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-500 text-[0.875rem]">Live Camera Feed</p>
-                <p className="text-slate-600 text-[0.75rem]">Camera 1 - {selectedCourse} - Room 204</p>
+            {isStreaming ? (
+              <img
+                src={streamUrl}
+                alt="Live Camera Feed"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+                <div className="text-center">
+                  <Camera className="w-16 h-16 text-slate-600 mx-auto mb-3" />
+                  <p className="text-slate-500 text-[0.875rem]">
+                    {serverOnline ? "Click \"Start Scanning\" to begin" : "Waiting for Python server..."}
+                  </p>
+                  <p className="text-slate-600 text-[0.75rem]">Camera 1 - {selectedCourse} - Room 204</p>
+                </div>
               </div>
-            </div>
-
-            {/* Simulated detection boxes */}
-            {isRecording && (
-              <>
-                <div className="absolute top-[15%] left-[20%] w-20 h-24 border-2 border-emerald-400 rounded-lg">
-                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 bg-emerald-500/90 backdrop-blur text-white text-[0.6rem] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ fontWeight: 500 }}>
-                    Sarah J. (98%)
-                  </div>
-                </div>
-                <div className="absolute top-[20%] left-[50%] w-18 h-22 border-2 border-emerald-400 rounded-lg">
-                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 bg-emerald-500/90 backdrop-blur text-white text-[0.6rem] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ fontWeight: 500 }}>
-                    Michael C. (96%)
-                  </div>
-                </div>
-                <div className="absolute top-[25%] right-[20%] w-20 h-24 border-2 border-cyan-400 rounded-lg animate-pulse">
-                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 bg-cyan-500/90 backdrop-blur text-white text-[0.6rem] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ fontWeight: 500 }}>
-                    Scanning...
-                  </div>
-                </div>
-              </>
             )}
 
             {/* Top controls overlay */}
             <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
               <div className="bg-black/50 backdrop-blur-md text-white px-3 py-1.5 rounded-lg flex items-center gap-2 text-[0.75rem]">
-                {isRecording && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
-                <span>LIVE</span>
+                {isStreaming && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                <span>{isStreaming ? "LIVE" : "OFFLINE"}</span>
                 <span className="text-slate-400">&middot;</span>
                 <span>{formatTime(elapsed)}</span>
               </div>
@@ -201,23 +221,25 @@ export function LiveCamera() {
             </button>
           </div>
           <div className="flex-1 space-y-2 overflow-y-auto max-h-[400px] pr-1">
+            {recognized.length === 0 && (
+              <p className="text-slate-400 text-[0.8125rem] text-center py-8">
+                {isStreaming ? "Scanning for faces..." : "Start scanning to see recognized students"}
+              </p>
+            )}
             {recognized.map((student, idx) => (
               <div
-                key={student.id}
+                key={student.name + idx}
                 className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-indigo-200 transition-all"
-                style={{ animationDelay: `${idx * 100}ms` }}
               >
                 <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-cyan-400 rounded-full flex items-center justify-center text-white text-[0.6875rem] flex-shrink-0" style={{ fontWeight: 600 }}>
-                  {student.name.split(" ").map(n => n[0]).join("")}
+                  {student.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <p className="text-[0.8125rem] text-slate-800 truncate" style={{ fontWeight: 500 }}>{student.name}</p>
-                    <StatusBadge variant={student.status}>{student.status}</StatusBadge>
+                    <StatusBadge variant="present">present</StatusBadge>
                   </div>
                   <div className="flex items-center gap-2 text-[0.6875rem] text-slate-400 mt-0.5">
-                    <span>{student.studentId}</span>
-                    <span>&middot;</span>
                     <span>{student.time}</span>
                     <span>&middot;</span>
                     <span className="text-emerald-500" style={{ fontWeight: 500 }}>{student.confidence}%</span>

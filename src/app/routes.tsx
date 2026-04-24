@@ -8,23 +8,39 @@ import { LiveCamera } from "./pages/LiveCamera";
 import { StudentManagement } from "./pages/StudentManagement";
 import { AttendanceReports } from "./pages/AttendanceReports";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
-import {
-  AdminTeachers, AdminCourses, AdminSettings,
-  TeacherClasses, TeacherAttendance,
-  StudentAttendance, StudentSchedule, StudentProfile,
-  NotFound,
-} from "./pages/PlaceholderPages";
+import { AdminTeachers } from "./pages/AdminTeachers";
+import { AdminCourses } from "./pages/AdminCourses";
+import { AdminSettings } from "./pages/AdminSettings";
+import { TeacherClasses } from "./pages/TeacherClasses";
+import { TeacherAttendanceSummary } from "./pages/TeacherAttendanceSummary";
+import { StudentAttendanceHistory } from "./pages/StudentAttendanceHistory";
+import { StudentSchedule } from "./pages/StudentSchedule";
+import { StudentProfile } from "./pages/StudentProfile";
+import { NotFound } from "./pages/PlaceholderPages";
+import { AuthGuard } from "./components/layout/AuthGuard";
 
 function AdminLayout() {
-  return <DashboardLayout role="admin" title="Admin Dashboard" userName="Admin User" />;
+  return (
+    <AuthGuard role="admin">
+      <DashboardLayout role="admin" title="Admin Dashboard" userName="Admin User" />
+    </AuthGuard>
+  );
 }
 
 function TeacherLayout() {
-  return <DashboardLayout role="teacher" title="Teacher Dashboard" userName="Dr. Smith" />;
+  return (
+    <AuthGuard role="teacher">
+      <DashboardLayout role="teacher" title="Teacher Dashboard" userName="Dr. Smith" />
+    </AuthGuard>
+  );
 }
 
 function StudentLayout() {
-  return <DashboardLayout role="student" title="Student Dashboard" userName="Sarah Johnson" />;
+  return (
+    <AuthGuard role="student">
+      <DashboardLayout role="student" title="Student Dashboard" userName="Sarah Johnson" />
+    </AuthGuard>
+  );
 }
 
 export const router = createBrowserRouter([
@@ -50,7 +66,7 @@ export const router = createBrowserRouter([
       { index: true, Component: TeacherDashboard },
       { path: "classes", Component: TeacherClasses },
       { path: "camera", Component: LiveCamera },
-      { path: "attendance", Component: TeacherAttendance },
+      { path: "attendance", Component: TeacherAttendanceSummary },
       { path: "reports", Component: AttendanceReports },
     ],
   },
@@ -59,7 +75,7 @@ export const router = createBrowserRouter([
     Component: StudentLayout,
     children: [
       { index: true, Component: StudentDashboard },
-      { path: "attendance", Component: StudentAttendance },
+      { path: "attendance", Component: StudentAttendanceHistory },
       { path: "schedule", Component: StudentSchedule },
       { path: "profile", Component: StudentProfile },
     ],

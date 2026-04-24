@@ -1,0 +1,74 @@
+# AMS-FaceRec Changelog
+
+This document outlines the recent implementation of features planned for the **Attendance Management System (AMS-FaceRec)**. These changes replace placeholder screens with fully functional pages across Admin, Teacher, and Student roles.
+
+---
+
+## 🚀 Newly Implemented Pages & Features
+
+### 1. **System Settings (`/admin/settings`)**
+*   **File:** `src/app/pages/AdminSettings.tsx`
+*   **Features:**
+    *   **General configuration:** Update institution name, academic year, and semester dates.
+    *   **Attendance thresholds:** Sliders to configure "late check-in" thresholds (in minutes) and "minimum attendance" percentages.
+    *   **Face Engine API:** Setup for the Flask API URL and adjustable recognition confidence thresholds (with visual security level indicators).
+    *   **Notifications:** Toggles for global email alerts, low attendance warnings, and daily reports.
+*   **Data Handling:** Fully wired to persist state locally using `localStorage`.
+
+### 2. **Teacher Classes Overview (`/teacher/classes`)**
+*   **File:** `src/app/pages/TeacherClasses.tsx`
+*   **Features:**
+    *   Dynamically fetches and lists active courses assigned to the logged-in teacher using the Supabase API.
+    *   Each class card displays the schedule, room number, and enrolled student count.
+    *   **Student Roster Dropdown:** Expandable view showing a list of enrolled students along with their individual attendance percentages. Highlights students dropping below the admin-defined minimum threshold.
+    *   **Quick Scan:** "Start Scan" button directly links to the Live Camera page with the specific course pre-selected.
+
+### 3. **Teacher Attendance Summary (`/teacher/attendance`)**
+*   **File:** `src/app/pages/TeacherAttendanceSummary.tsx`
+*   **Features:**
+    *   Advanced filtering by specific date ranges and assigned courses.
+    *   **Analytics:** Includes a dynamic bar chart visualizing attendance rates across different classes.
+    *   **Detailed Records Table:** Paginated table showing all attendance check-ins.
+    *   **Manual Override:** Teachers can manually adjust a student's check-in status (e.g., from absent to present) and are required to provide a reason note.
+    *   **Data Export:** Includes a button to export the filtered attendance data as a CSV file.
+
+### 4. **Student Attendance History (`/student/attendance`)**
+*   **File:** `src/app/pages/StudentAttendanceHistory.tsx`
+*   **Features:**
+    *   Visual progress bars displaying overall attendance percentages for each enrolled course.
+    *   **Dynamic Warnings:** A prominent warning banner appears if the student falls below the minimum attendance requirement (reads threshold from Admin settings).
+    *   **Detailed Log:** Filterable (by course, status, and date) and paginated table detailing individual class check-in events.
+    *   **Data Export:** Includes CSV export functionality for the student's personal records.
+
+### 5. **Student Schedule (`/student/schedule`)**
+*   **File:** `src/app/pages/StudentSchedule.tsx`
+*   **Features:**
+    *   **Interactive Timetable:** A visual weekly calendar grid (Monday-Friday) accurately plotting enrolled classes by hour and duration.
+    *   The current day is highlighted for quick reference.
+    *   **Upcoming View:** A specialized list view detailing the student's scheduled classes for the upcoming 7 days, including room numbers and instructor names.
+
+### 6. **Student Profile (`/student/profile`)**
+*   **File:** `src/app/pages/StudentProfile.tsx`
+*   **Features:**
+    *   Displays user information (Name, Email, Student ID) fetched directly from the current Supabase authentication session.
+    *   Lists currently enrolled active courses.
+    *   **Face Enrollment Status:** A dedicated card showing whether the student's face data is registered. If not enrolled, a "Request Enrollment" button notifies administrators.
+    *   **Account Security:** Fully functional Change Password form utilizing `supabase.auth.updateUser()`. Includes validation and error handling.
+    *   Profile photo upload UI hook prepared.
+
+---
+
+## 🛠 Structural & Routing Updates
+
+### **Routing (`/src/app/routes.tsx`)**
+*   Updated the `react-router` configuration to map the newly created functional components (listed above) to their respective route paths.
+*   Replaced all imports that previously pointed to the `PlaceholderPages` module.
+
+### **Cleanup (`/src/app/pages/PlaceholderPages.tsx`)**
+*   Stripped out all the temporary placeholder component exports (e.g., `AdminSettings`, `StudentProfile`, etc.).
+*   The file now only retains the `NotFound` component for handling 404 errors.
+
+---
+
+## ✅ Build Verification
+*   The TypeScript compiler (`tsc`) and Vite build scripts have been run successfully (`npm run build`) with exit code 0, confirming no syntax or unresolved import errors remain in the newly added files.
