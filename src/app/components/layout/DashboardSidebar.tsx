@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, BookOpen, Camera, FileBarChart, Settings,
   GraduationCap, CalendarCheck, UserCircle, Clock, Sun, ChevronLeft, ChevronRight, LogOut
 } from "lucide-react";
-import { supabase } from "../../../../utils/supabase/supabase";
+import { supabase } from "../../../../utils/supabase/client";
 
 type Role = "admin" | "teacher" | "student";
 

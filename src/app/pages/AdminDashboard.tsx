@@ -3,8 +3,14 @@ import { Users, GraduationCap, BookOpen, CalendarCheck, Camera, ArrowUpRight, Lo
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { StatCard } from "../components/shared/StatCard";
 import { StatusBadge } from "../components/shared/StatusBadge";
+import { WeeklyAttendanceTable } from "../components/shared/WeeklyAttendanceTable";
 import { Link } from "react-router";
-import { getAdminStats, type AdminStats } from "../lib/api";
+import {
+  getAdminStats,
+  getWeeklyAttendanceAnalysis,
+  type AdminStats,
+  type WeeklyAttendanceSummary,
+} from "../lib/api";
 
 // Static display data (charts use fixed week/month data for visual context)
 const weeklyData = [
@@ -83,12 +89,23 @@ function DonutChart() {
 export function AdminDashboard() {
   const [stats, setStats]     = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAttendanceSummary[]>([]);
+  const [weeklyLoading, setWeeklyLoading] = useState(true);
+  const [weeklyError, setWeeklyError] = useState<string | null>(null);
 
   useEffect(() => {
     getAdminStats()
       .then(setStats)
       .catch((err) => console.error("Admin stats error:", err))
       .finally(() => setLoading(false));
+
+    getWeeklyAttendanceAnalysis({ scope: "all" })
+      .then(setWeeklyAnalysis)
+      .catch((err) => {
+        console.error("Weekly attendance error:", err);
+        setWeeklyError("Could not load weekly attendance analysis.");
+      })
+      .finally(() => setWeeklyLoading(false));
   }, []);
 
   return (
@@ -127,6 +144,14 @@ export function AdminDashboard() {
           iconBg="bg-emerald-100 text-emerald-600"
         />
       </div>
+
+      <WeeklyAttendanceTable
+        title="Weekly Attendance Analysis"
+        description="Institution-wide attendance summary for the current month."
+        data={weeklyAnalysis}
+        loading={weeklyLoading}
+        error={weeklyError}
+      />
 
       {/* Charts Row */}
       <div className="grid lg:grid-cols-3 gap-6">

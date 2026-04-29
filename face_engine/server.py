@@ -28,10 +28,12 @@ CORS(app)
 facedetect = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 # Supabase config
-SUPABASE_URL = "https://xvdrcunhridojwjtbfpc.supabase.co"
+SUPABASE_URL = os.environ.get("VITE_SUPABASE_URL", "https://lngcsgcqtwdgyrvmykhy.supabase.co")
 SUPABASE_KEY = os.environ.get("VITE_SUPABASE_PUBLISHABLE_KEY")
+
 if not SUPABASE_KEY:
-    raise ValueError("VITE_SUPABASE_PUBLISHABLE_KEY environment variable is missing. Please set it before running the server.")
+    raise ValueError("VITE_SUPABASE_PUBLISHABLE_KEY environment variable is missing. Please set it in the root .env file.")
+
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",

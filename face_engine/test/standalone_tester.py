@@ -7,7 +7,7 @@ from sklearn.neighbors import KNeighborsClassifier
 
 # Set working directory to parent conceptually, or use absolute path
 # Since this script is inside 'test', data is in '../data'
-DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 
 # --- OpenCV Initialization ---
 cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -24,6 +24,12 @@ try:
         FACES = np.load(f)
 except Exception as e:
     print(f"❌ Data files not found at {DATA_DIR}. Make sure you have enrolled a student through the dashboard first.")
+    exit()
+
+# Ensure data consistency
+if len(FACES) != len(LABELS):
+    print(f"Data corruption detected! FACES length ({len(FACES)}) does not match LABELS length ({len(LABELS)}).")
+    print("Please delete the 'data' folder contents and re-enroll users.")
     exit()
 
 # Train KNN Model

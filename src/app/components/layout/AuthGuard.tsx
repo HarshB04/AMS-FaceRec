@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
-import { supabase } from "../../../../utils/supabase/supabase";
+import { supabase } from "../../../../utils/supabase/client";
 import { Loader2 } from "lucide-react";
 
 interface AuthGuardProps {

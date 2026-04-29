@@ -3,7 +3,13 @@ import { CalendarCheck, BookOpen, Clock, TrendingUp, Award } from "lucide-react"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { StatCard } from "../components/shared/StatCard";
 import { StatusBadge } from "../components/shared/StatusBadge";
-import { getStudentStats, type StudentStats } from "../lib/api";
+import { WeeklyAttendanceTable } from "../components/shared/WeeklyAttendanceTable";
+import {
+  getStudentStats,
+  getWeeklyAttendanceAnalysis,
+  type StudentStats,
+  type WeeklyAttendanceSummary,
+} from "../lib/api";
 
 const attendanceHistory = [
   { date: "Feb 24", course: "CS-301", time: "8:45 AM", status: "present" as const },
@@ -33,11 +39,21 @@ const courseProgress = [
 
 export function StudentDashboard() {
   const [stats, setStats] = useState<StudentStats | null>(null);
+  const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAttendanceSummary[]>([]);
+  const [weeklyLoading, setWeeklyLoading] = useState(true);
+  const [weeklyError, setWeeklyError] = useState<string | null>(null);
 
   useEffect(() => {
     getStudentStats()
       .then(setStats)
       .catch((err) => console.error("Student stats error:", err));
+    getWeeklyAttendanceAnalysis({ scope: "all" })
+      .then(setWeeklyAnalysis)
+      .catch((err) => {
+        console.error("Weekly attendance error:", err);
+        setWeeklyError("Could not load weekly attendance analysis.");
+      })
+      .finally(() => setWeeklyLoading(false));
   }, []);
 
   const overallRate = stats ? stats.attendanceRate : 91.5;
@@ -68,6 +84,14 @@ export function StudentDashboard() {
           iconBg="bg-amber-100 text-amber-600"
         />
       </div>
+
+      <WeeklyAttendanceTable
+        title="Weekly Attendance Analysis"
+        description="Institution-wide attendance summary for the current month."
+        data={weeklyAnalysis}
+        loading={weeklyLoading}
+        error={weeklyError}
+      />
 
       {/* Progress + Trend */}
       <div className="grid lg:grid-cols-3 gap-6">

@@ -3,8 +3,14 @@ import {
   User, Mail, BookOpen, Camera, CheckCircle2, XCircle,
   Key, Upload, Loader2, AlertCircle, Save,
 } from "lucide-react";
-import { supabase } from "../../../utils/supabase/supabase";
-import { getCourses, type Course } from "../lib/api";
+import { supabase } from "../../../utils/supabase/client";
+import {
+  getCourses,
+  getWeeklyAttendanceAnalysis,
+  type Course,
+  type WeeklyAttendanceSummary,
+} from "../lib/api";
+import { WeeklyAttendanceTable } from "../components/shared/WeeklyAttendanceTable";
 
 interface ProfileState {
   name: string;
@@ -32,6 +38,9 @@ export function StudentProfile() {
   const [profile, setProfile] = useState<ProfileState | null>(null);
   const [loading, setLoading] = useState(true);
   const [coursesLoading, setCoursesLoading] = useState(true);
+  const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAttendanceSummary[]>([]);
+  const [weeklyLoading, setWeeklyLoading] = useState(true);
+  const [weeklyError, setWeeklyError] = useState<string | null>(null);
 
   // Change password form
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
@@ -45,17 +54,37 @@ export function StudentProfile() {
     async function load() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) { setLoading(false); return; }
+        if (!session) {
+          setWeeklyLoading(false);
+          setLoading(false);
+          return;
+        }
         const meta = session.user.user_metadata || {};
+        const studentId = meta.student_id || meta.student_id_text || "STU-000";
+        const email = session.user.email || "";
         setProfile({
           name: meta.name || meta.full_name || session.user.email?.split("@")[0] || "Student",
-          studentId: meta.student_id || "STU-000",
-          email: session.user.email || "",
+          studentId,
+          email,
           faceEnrolled: meta.face_enrolled ?? false,
           courses: [],
         });
+
+        getWeeklyAttendanceAnalysis({
+          scope: "student",
+          studentEmail: email,
+          studentIdText: studentId,
+        })
+          .then(setWeeklyAnalysis)
+          .catch((err) => {
+            console.error("Student weekly attendance error:", err);
+            setWeeklyError("Could not load your weekly attendance analysis.");
+          })
+          .finally(() => setWeeklyLoading(false));
       } catch (err) {
         console.error("Profile load error:", err);
+        setWeeklyError("Could not load your weekly attendance analysis.");
+        setWeeklyLoading(false);
       } finally {
         setLoading(false);
       }
@@ -239,6 +268,15 @@ export function StudentProfile() {
           </p>
         )}
       </div>
+
+      <WeeklyAttendanceTable
+        title="My Weekly Attendance Analysis"
+        description="Your current-month attendance summary by week."
+        data={weeklyAnalysis}
+        loading={weeklyLoading}
+        error={weeklyError}
+        emptyMessage="No attendance records found for your profile in the current month."
+      />
 
       {/* Change password */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">

@@ -4,25 +4,8 @@ import {
   BookOpen, Users, ChevronDown, ChevronUp, Camera,
   Calendar, MapPin, Loader2, AlertCircle,
 } from "lucide-react";
-import { getCourses, type Course } from "../lib/api";
+import { getCourses, getStudentsByCourse, type Course, type Student } from "../lib/api";
 import { StatusBadge } from "../components/shared/StatusBadge";
-
-// Dummy student roster per course (in a real app fetched per course)
-const ROSTER: Record<string, { id: string; name: string; attendance: number }[]> = {
-  default: [
-    { id: "STU-001", name: "Sarah Johnson",   attendance: 94 },
-    { id: "STU-002", name: "Michael Chen",    attendance: 88 },
-    { id: "STU-003", name: "Emily Davis",     attendance: 72 },
-    { id: "STU-004", name: "James Wilson",    attendance: 96 },
-    { id: "STU-005", name: "Sophia Martinez", attendance: 91 },
-    { id: "STU-006", name: "Robert Brown",    attendance: 68 },
-    { id: "STU-007", name: "Lisa Thompson",   attendance: 85 },
-  ],
-};
-
-function rosterFor(code: string) {
-  return ROSTER[code] || ROSTER.default;
-}
 
 function AttendancePill({ pct }: { pct: number }) {
   const color =
@@ -43,7 +26,18 @@ interface ClassCardProps {
 
 function ClassCard({ course, minAttendance }: ClassCardProps) {
   const [open, setOpen] = useState(false);
-  const roster = rosterFor(course.code);
+  const [roster, setRoster] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open && roster.length === 0) {
+      setLoading(true);
+      getStudentsByCourse(course.name)
+        .then(setRoster)
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    }
+  }, [open, course.name]);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -59,7 +53,7 @@ function ClassCard({ course, minAttendance }: ClassCardProps) {
             <p className="text-[0.9375rem] text-slate-800 font-semibold">{course.name}</p>
           </div>
           <Link
-            to={`/teacher/camera?course=${encodeURIComponent(course.code)}`}
+            to={`/teacher/camera?course=${encodeURIComponent(course.name)}`}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[0.75rem] rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0"
           >
             <Camera className="w-3.5 h-3.5" /> Start Scan
@@ -83,37 +77,43 @@ function ClassCard({ course, minAttendance }: ClassCardProps) {
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-5 py-2.5 bg-slate-50 border-t border-slate-100 text-[0.8125rem] text-slate-600 hover:bg-slate-100 transition-colors"
       >
-        <span>View student roster ({roster.length})</span>
+        <span>View student roster</span>
         {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
       </button>
 
       {open && (
         <div className="border-t border-slate-100">
-          <table className="w-full text-[0.8125rem]">
-            <thead>
-              <tr className="bg-slate-50">
-                <th className="text-left py-2 px-5 text-slate-500 font-medium">Student ID</th>
-                <th className="text-left py-2 px-5 text-slate-500 font-medium">Name</th>
-                <th className="text-center py-2 px-5 text-slate-500 font-medium">Attendance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {roster.map((s) => (
-                <tr key={s.id} className="border-t border-slate-50 hover:bg-slate-50/50">
-                  <td className="py-2.5 px-5 text-slate-400 font-mono text-[0.75rem]">{s.id}</td>
-                  <td className="py-2.5 px-5 text-slate-800 font-medium">{s.name}</td>
-                  <td className="py-2.5 px-5 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <AttendancePill pct={s.attendance} />
-                      {s.attendance < minAttendance && (
-                        <span className="text-[0.6875rem] text-red-500">⚠ Low</span>
-                      )}
-                    </div>
-                  </td>
+          {loading ? (
+             <div className="p-4 text-center text-sm text-slate-500">Loading roster...</div>
+          ) : roster.length === 0 ? (
+             <div className="p-4 text-center text-sm text-slate-500">No students enrolled.</div>
+          ) : (
+            <table className="w-full text-[0.8125rem]">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="text-left py-2 px-5 text-slate-500 font-medium">Student ID</th>
+                  <th className="text-left py-2 px-5 text-slate-500 font-medium">Name</th>
+                  <th className="text-center py-2 px-5 text-slate-500 font-medium">Attendance</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {roster.map((s) => (
+                  <tr key={s.id} className="border-t border-slate-50 hover:bg-slate-50/50">
+                    <td className="py-2.5 px-5 text-slate-400 font-mono text-[0.75rem]">{s.studentId}</td>
+                    <td className="py-2.5 px-5 text-slate-800 font-medium">{s.name}</td>
+                    <td className="py-2.5 px-5 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <AttendancePill pct={s.attendance} />
+                        {s.attendance < minAttendance && (
+                          <span className="text-[0.6875rem] text-red-500">⚠ Low</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>

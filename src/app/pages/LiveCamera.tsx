@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router";
 import { Camera, Pause, Play, Download, RefreshCw, Users, CheckCircle2, Clock, XCircle, Maximize2, Settings, Power } from "lucide-react";
 import { StatusBadge } from "../components/shared/StatusBadge";
+import { getCourses, getStudentsByCourse, getTodayAttendanceForCourse, type Course, type Student } from "../lib/api";
 
 interface RecognizedStudent {
   name: string;
@@ -11,13 +13,19 @@ interface RecognizedStudent {
 const FLASK_URL = "http://localhost:5000";
 
 export function LiveCamera() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlCourse = searchParams.get("course") || "";
+
   const [isStreaming, setIsStreaming] = useState(false);
   const [recognized, setRecognized] = useState<RecognizedStudent[]>([]);
   const [elapsed, setElapsed] = useState(0);
-  const [selectedCourse, setSelectedCourse] = useState("CS-301");
+  const [selectedCourse, setSelectedCourse] = useState(urlCourse);
   const [serverOnline, setServerOnline] = useState(false);
   const [streamUrl, setStreamUrl] = useState("");
   const imgRef = useRef<HTMLImageElement>(null);
+
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [totalStudents, setTotalStudents] = useState(0);
 
   // Check if Flask server is online
   useEffect(() => {
@@ -41,7 +49,27 @@ export function LiveCamera() {
     return () => clearInterval(timer);
   }, [isStreaming]);
 
-  // Poll recognized students from Flask
+  // Load courses
+  useEffect(() => {
+    getCourses().then(c => {
+      setCourses(c.filter(course => course.status === "active"));
+      if (!selectedCourse && c.length > 0) {
+        setSelectedCourse(c[0].name);
+        setSearchParams({ course: c[0].name });
+      }
+    }).catch(console.error);
+  }, []);
+
+  // Update URL and fetch students when selectedCourse changes
+  useEffect(() => {
+    if (!selectedCourse) return;
+    setSearchParams({ course: selectedCourse });
+    getStudentsByCourse(selectedCourse).then(students => {
+      setTotalStudents(students.length);
+    }).catch(console.error);
+  }, [selectedCourse, setSearchParams]);
+
+  // Poll recognized students from Flask and DB
   useEffect(() => {
     if (!isStreaming) return;
     const interval = setInterval(async () => {
@@ -77,9 +105,8 @@ export function LiveCamera() {
     setStreamUrl("");
   };
 
-  const totalStudents = 32;
   const presentCount = recognized.length;
-  const absentCount = totalStudents - presentCount;
+  const absentCount = Math.max(0, totalStudents - presentCount);
 
   return (
     <div className="space-y-6">
@@ -99,9 +126,10 @@ export function LiveCamera() {
             onChange={(e) => setSelectedCourse(e.target.value)}
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
           >
-            <option value="CS-301">CS-301 - Data Structures</option>
-            <option value="CS-405">CS-405 - Machine Learning</option>
-            <option value="CS-201">CS-201 - OOP</option>
+            {courses.length === 0 ? <option value={selectedCourse}>{selectedCourse || "Select Course"}</option> : null}
+            {courses.map(c => (
+              <option key={c.id} value={c.name}>{c.code} - {c.name}</option>
+            ))}
           </select>
           <div className="flex items-center gap-2">
             {isStreaming && <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />}
@@ -195,17 +223,19 @@ export function LiveCamera() {
             </div>
 
             {/* Bottom info bar */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
-              <div className="flex items-center justify-between text-white text-[0.75rem]">
-                <span>{recognized.length}/{totalStudents} recognized</span>
-                <div className="w-32 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-400 rounded-full transition-all duration-500"
-                    style={{ width: `${(recognized.length / totalStudents) * 100}%` }}
-                  />
-                </div>
-                <span>{Math.round((recognized.length / totalStudents) * 100)}%</span>
+            <div className="absolute bottom-4 inset-x-4 flex items-center justify-between z-20">
+              <span className="text-white text-[0.8125rem] bg-slate-900/60 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 font-medium">
+                {presentCount}/{totalStudents} recognized
+              </span>
+              <div className="w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${totalStudents > 0 ? (presentCount/totalStudents)*100 : 0}%` }}
+                />
               </div>
+              <span className="text-white text-[0.8125rem] bg-slate-900/60 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 font-medium">
+                {totalStudents > 0 ? Math.round((presentCount/totalStudents)*100) : 0}%
+              </span>
             </div>
           </div>
         </div>

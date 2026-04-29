@@ -29,6 +29,12 @@ export const getStudents = async () => {
   return data.map(mapStudent);
 };
 
+export const getStudentsByCourse = async (courseName: string) => {
+  const { data, error } = await supabase.from("students").select("*").eq("course", courseName);
+  if (error) throw new Error(error.message || JSON.stringify(error));
+  return data.map(mapStudent);
+};
+
 export const getStudent = async (id: string) => {
   const { data, error } = await supabase.from("students").select("*").eq("id", id).single();
   if (error) throw new Error(error.message || JSON.stringify(error));
@@ -165,6 +171,17 @@ export const getAttendance = async () => {
   return data.map(mapAttendance);
 };
 
+export const getTodayAttendanceForCourse = async (courseId: string) => {
+  const today = new Date().toISOString().split("T")[0];
+  const { data, error } = await supabase
+    .from("attendance")
+    .select("*, students(*)")
+    .eq("course_id", courseId)
+    .eq("date_attended", today);
+  if (error) throw new Error(error.message || JSON.stringify(error));
+  return data;
+};
+
 export const logAttendance = async (data: any) => {
   const { data: res, error } = await supabase.from("attendance").insert(data).select().single();
   if (error) throw new Error(error.message || JSON.stringify(error));
@@ -175,6 +192,118 @@ export const deleteAttendance = async (id: string) => {
   const { error } = await supabase.from("attendance").delete().eq("id", id);
   if (error) throw new Error(error.message || JSON.stringify(error));
   return { message: "Deleted" };
+};
+
+export interface WeeklyAttendanceSummary {
+  week: string;
+  dateRange: string;
+  startDate: string;
+  endDate: string;
+  present: number;
+  late: number;
+  absent: number;
+  total: number;
+  rate: number;
+}
+
+interface WeeklyAttendanceOptions {
+  scope: "all" | "student";
+  month?: Date;
+  studentEmail?: string;
+  studentIdText?: string;
+}
+
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateKey = (value: string) => new Date(`${value}T00:00:00`);
+
+const formatShortDate = (date: Date) =>
+  date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+const getMonthWeeks = (monthDate = new Date()) => {
+  const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+  const weeks: Array<{ start: Date; end: Date }> = [];
+  let cursor = new Date(monthStart);
+
+  while (cursor <= monthEnd) {
+    const dayOfWeek = cursor.getDay();
+    const daysUntilSunday = 6 - dayOfWeek;
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(cursor.getDate() + daysUntilSunday);
+    if (weekEnd > monthEnd) weekEnd.setTime(monthEnd.getTime());
+
+    weeks.push({ start: new Date(cursor), end: new Date(weekEnd) });
+
+    cursor = new Date(weekEnd);
+    cursor.setDate(weekEnd.getDate() + 1);
+  }
+
+  return weeks;
+};
+
+export const getWeeklyAttendanceAnalysis = async ({
+  scope,
+  month = new Date(),
+  studentEmail,
+  studentIdText,
+}: WeeklyAttendanceOptions): Promise<WeeklyAttendanceSummary[]> => {
+  const weeks = getMonthWeeks(month);
+  const monthStart = weeks[0]?.start;
+  const monthEnd = weeks[weeks.length - 1]?.end;
+
+  if (!monthStart || !monthEnd) return [];
+
+  const { data, error } = await supabase
+    .from("attendance")
+    .select("id, date_attended, status, students(id, email, student_id_text), courses(id, course_code, teacher)")
+    .gte("date_attended", toDateKey(monthStart))
+    .lte("date_attended", toDateKey(monthEnd));
+
+  if (error) throw new Error(error.message || JSON.stringify(error));
+
+  const normalizedEmail = studentEmail?.trim().toLowerCase();
+  const normalizedStudentId = studentIdText?.trim().toLowerCase();
+  const records = (data ?? []).filter((record: any) => {
+    if (scope === "all") return true;
+    const student = record.students;
+    const emailMatches = normalizedEmail && student?.email?.toLowerCase() === normalizedEmail;
+    const idMatches =
+      normalizedStudentId && student?.student_id_text?.toLowerCase() === normalizedStudentId;
+    return Boolean(emailMatches || idMatches);
+  });
+
+  if (records.length === 0) return [];
+
+  return weeks.map((week, index) => {
+    const summary = records.reduce(
+      (acc, record: any) => {
+        const attendedDate = parseDateKey(record.date_attended);
+        if (attendedDate < week.start || attendedDate > week.end) return acc;
+
+        acc.total += 1;
+        if (record.status === "present") acc.present += 1;
+        if (record.status === "late") acc.late += 1;
+        if (record.status === "absent") acc.absent += 1;
+        return acc;
+      },
+      { present: 0, late: 0, absent: 0, total: 0 }
+    );
+
+    return {
+      week: `Week ${index + 1}`,
+      dateRange: `${formatShortDate(week.start)} - ${formatShortDate(week.end)}`,
+      startDate: toDateKey(week.start),
+      endDate: toDateKey(week.end),
+      ...summary,
+      rate: summary.total > 0 ? Math.round((summary.present / summary.total) * 100) : 0,
+    };
+  });
 };
 
 // ── Stats ─────────────────────────────────────────────────────────────────────

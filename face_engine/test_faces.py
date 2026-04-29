@@ -8,11 +8,24 @@ from datetime import datetime
 from sklearn.neighbors import KNeighborsClassifier
 
 # --- Configuration & Env Vars ---
-SUPABASE_URL = "https://xvdrcunhridojwjtbfpc.supabase.co"
-SUPABASE_KEY = os.environ.get("VITE_SUPABASE_PUBLISHABLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxuZ2NzZ2NxdHdkZ3lydm15a2h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDc5MDMsImV4cCI6MjA5MTkyMzkwM30.NxQrvjIeWesSuMtwmlVDPPEX5-2Dr5ol1hbQIbdVhv8")
+# Load .env manually if it exists in parent dir
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+if os.path.exists(env_path):
+    with open(env_path) as f:
+        for line in f:
+            if line.strip() and not line.startswith('#') and '=' in line:
+                k, v = line.strip().split('=', 1)
+                if k not in os.environ:
+                    os.environ[k] = v.strip('"\'')
+
+SUPABASE_URL = os.environ.get("VITE_SUPABASE_URL", "https://lngcsgcqtwdgyrvmykhy.supabase.co")
+SUPABASE_KEY = os.environ.get("VITE_SUPABASE_PUBLISHABLE_KEY")
+
+if not SUPABASE_KEY:
+    raise ValueError("VITE_SUPABASE_PUBLISHABLE_KEY environment variable is missing. Please set it in the root .env file.")
 
 HEADERS = {
-    "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxuZ2NzZ2NxdHdkZ3lydm15a2h5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDc5MDMsImV4cCI6MjA5MTkyMzkwM30.NxQrvjIeWesSuMtwmlVDPPEX5-2Dr5ol1hbQIbdVhv8",
+    "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
     "Prefer": "return=representation"

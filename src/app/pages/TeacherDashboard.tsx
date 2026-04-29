@@ -4,7 +4,15 @@ import { BookOpen, Users, CalendarCheck, Clock, Camera, ArrowUpRight, CheckCircl
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { StatCard } from "../components/shared/StatCard";
 import { StatusBadge } from "../components/shared/StatusBadge";
-import { getTeacherStats, getCourses, type TeacherStats, type Course } from "../lib/api";
+import { WeeklyAttendanceTable } from "../components/shared/WeeklyAttendanceTable";
+import {
+  getTeacherStats,
+  getCourses,
+  getWeeklyAttendanceAnalysis,
+  type TeacherStats,
+  type Course,
+  type WeeklyAttendanceSummary,
+} from "../lib/api";
 
 const todayStudents = [
   { name: "Sarah Johnson", id: "STU-001", time: "8:45 AM", status: "present" as const },
@@ -28,6 +36,9 @@ export function TeacherDashboard() {
   const [selectedClass, setSelectedClass] = useState("CS-301");
   const [stats, setStats]   = useState<TeacherStats | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAttendanceSummary[]>([]);
+  const [weeklyLoading, setWeeklyLoading] = useState(true);
+  const [weeklyError, setWeeklyError] = useState<string | null>(null);
 
   useEffect(() => {
     getTeacherStats()
@@ -36,6 +47,13 @@ export function TeacherDashboard() {
     getCourses()
       .then((data) => setCourses(data.sort((a, b) => a.code.localeCompare(b.code))))
       .catch((err) => console.error("Courses error:", err));
+    getWeeklyAttendanceAnalysis({ scope: "all" })
+      .then(setWeeklyAnalysis)
+      .catch((err) => {
+        console.error("Weekly attendance error:", err);
+        setWeeklyError("Could not load weekly attendance analysis.");
+      })
+      .finally(() => setWeeklyLoading(false));
   }, []);
 
   const displayClasses = courses.length > 0 ? courses.slice(0, 3) : [
@@ -53,6 +71,14 @@ export function TeacherDashboard() {
         <StatCard title="Today's Attendance" value={stats ? `${stats.todayAttendanceRate}%` : "…"} change="+3.2% vs avg" changeType="up" icon={<CalendarCheck className="w-5 h-5" />} iconBg="bg-emerald-100 text-emerald-600" />
         <StatCard title="Next Class" value={stats ? stats.nextClass : "…"} icon={<Clock className="w-5 h-5" />} iconBg="bg-amber-100 text-amber-600" />
       </div>
+
+      <WeeklyAttendanceTable
+        title="Weekly Attendance Analysis"
+        description="Institution-wide attendance summary for the current month."
+        data={weeklyAnalysis}
+        loading={weeklyLoading}
+        error={weeklyError}
+      />
 
       {/* My Classes */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
