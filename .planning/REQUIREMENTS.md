@@ -68,12 +68,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| [Unmapped] | TBD | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| ADMIN-01 | Phase 2 | Pending |
+| ADMIN-02 | Phase 2 | Pending |
+| ADMIN-03 | Phase 2 | Pending |
+| ADMIN-04 | Phase 2 | Pending |
+| ADMIN-05 | Phase 3 | Pending |
+| TCHR-01 | Phase 4 | Pending |
+| TCHR-02 | Phase 4 | Pending |
+| TCHR-03 | Phase 4 | Pending |
+| TCHR-04 | Phase 6 | Pending |
+| TCHR-05 | Phase 6 | Pending |
+| STU-01 | Phase 5 | Pending |
+| STU-02 | Phase 5 | Pending |
+| STU-03 | Phase 5 | Pending |
+| STU-04 | Phase 5 | Pending |
+| NOTF-01 | Phase 8 | Pending |
+| NOTF-02 | Phase 8 | Pending |
+| NOTF-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 21 total
-- Mapped to phases: 0
-- Unmapped: 21 ⚠️
+- Mapped to phases: 21
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-29*
