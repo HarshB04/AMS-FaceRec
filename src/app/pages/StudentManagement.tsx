@@ -142,6 +142,14 @@ export function StudentManagement() {
         alert("Please enter a SBRN or First Name first!");
         return;
     }
+
+    try {
+      await fetch("http://localhost:5000/");
+    } catch (err) {
+      alert("Python Face Engine is not running. Please start the server on port 5000.");
+      return;
+    }
+
     const targetId = form.studentId || form.firstName;
     setEnrolling(true);
     setEnrollStream(`http://localhost:5000/enroll_feed?name=${encodeURIComponent(targetId)}&t=${Date.now()}`);
