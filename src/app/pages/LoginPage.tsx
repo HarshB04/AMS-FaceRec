@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Sun, Eye, EyeOff, ArrowRight, ShieldCheck, GraduationCap, User } from "lucide-react";
-import { supabase } from "../../../utils/supabase/supabase";
+import { supabase } from "../../../utils/supabase/client";
 
 const demoCredentials = {
   admin: { email: "admin@sunnyattend.com", password: "admin123" },
@@ -65,23 +65,23 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex" style={{ fontFamily: "Inter, sans-serif" }}>
+    <div className="min-h-screen bg-slate-50 flex" >
       {/* Left Panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 p-12 flex-col justify-between relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 p-12 flex-col justify-between relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(6,182,212,0.25),transparent_60%)]" />
         <div className="relative z-10">
           <Link to="/" className="flex items-center gap-2.5">
             <div className="w-9 h-9 bg-white/20 backdrop-blur rounded-lg flex items-center justify-center">
               <Sun className="w-5 h-5 text-white" />
             </div>
-            <span className="text-[1.25rem] text-white" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>SunnyAttend</span>
+            <span className="text-[1.25rem] text-white" >SunnyAttend</span>
           </Link>
         </div>
         <div className="relative z-10 space-y-6">
-          <h2 className="text-[2.5rem] text-white leading-tight" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>
+          <h2 className="text-[2.5rem] text-white leading-tight" >
             Welcome back to smarter attendance
           </h2>
-          <p className="text-indigo-200 text-[1.0625rem] max-w-md leading-relaxed">
+          <p className="text-blue-200 text-[1.0625rem] max-w-md leading-relaxed">
             Sign in to access your dashboard, manage classes, and track attendance with AI-powered face recognition.
           </p>
           <div className="flex gap-6 pt-4">
@@ -91,26 +91,26 @@ export function LoginPage() {
               { val: "99.2%", label: "Uptime" },
             ].map((s, i) => (
               <div key={i}>
-                <p className="text-[1.5rem] text-white" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>{s.val}</p>
-                <p className="text-[0.8125rem] text-indigo-300">{s.label}</p>
+                <p className="text-[1.5rem] text-white" >{s.val}</p>
+                <p className="text-[0.8125rem] text-blue-300">{s.label}</p>
               </div>
             ))}
           </div>
         </div>
-        <div className="relative z-10 text-[0.8125rem] text-indigo-300">&copy; 2026 SunnyAttend</div>
+        <div className="relative z-10 text-[0.8125rem] text-blue-300">&copy; 2026 SunnyAttend</div>
       </div>
 
       {/* Right Panel - Form */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex items-center gap-2.5 mb-10">
-            <div className="w-8 h-8 bg-gradient-to-br from-indigo-600 to-cyan-500 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-lg flex items-center justify-center">
               <Sun className="w-5 h-5 text-white" />
             </div>
-            <span className="text-[1.125rem] text-slate-900" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>SunnyAttend</span>
+            <span className="text-[1.125rem] text-slate-900" >SunnyAttend</span>
           </div>
 
-          <h1 className="text-[1.75rem] text-slate-900 mb-2" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>Sign in to your account</h1>
+          <h1 className="text-[1.75rem] text-slate-900 mb-2" >Sign in to your account</h1>
           <p className="text-slate-500 text-[0.9375rem] mb-8">Enter your credentials to access your dashboard</p>
 
           {/* Role Selector */}
@@ -121,7 +121,7 @@ export function LoginPage() {
                 onClick={() => handleRoleSwitch(r)}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[0.8125rem] capitalize transition-all ${
                   role === r
-                    ? "bg-white text-indigo-700 shadow-sm"
+                    ? "bg-white text-blue-700 shadow-sm"
                     : "text-slate-500 hover:text-slate-700"
                 }`}
                 style={{ fontWeight: role === r ? 600 : 400 }}
@@ -133,30 +133,30 @@ export function LoginPage() {
           </div>
 
           {/* Demo Credentials Card */}
-          <div className="mb-6 p-3.5 bg-indigo-50 border border-indigo-100 rounded-xl">
+          <div className="mb-6 p-3.5 bg-blue-50 border border-blue-100 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-5 h-5 bg-indigo-100 rounded flex items-center justify-center">
-                <ShieldCheck className="w-3 h-3 text-indigo-600" />
+              <div className="w-5 h-5 bg-blue-100 rounded flex items-center justify-center">
+                <ShieldCheck className="w-3 h-3 text-blue-600" />
               </div>
-              <span className="text-[0.75rem] text-indigo-700" style={{ fontWeight: 600 }}>Demo Credentials</span>
+              <span className="text-[0.75rem] text-blue-700" style={{ fontWeight: 600 }}>Demo Credentials</span>
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[0.75rem] text-indigo-500">Email:</span>
+                <span className="text-[0.75rem] text-blue-500">Email:</span>
                 <button
                   type="button"
                   onClick={() => { setEmail(demoCredentials[role].email); }}
-                  className="text-[0.75rem] text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded hover:bg-indigo-200 transition-colors font-mono"
+                  className="text-[0.75rem] text-blue-700 bg-blue-100 px-2 py-0.5 rounded hover:bg-blue-200 transition-colors font-mono"
                 >
                   {demoCredentials[role].email}
                 </button>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[0.75rem] text-indigo-500">Password:</span>
+                <span className="text-[0.75rem] text-blue-500">Password:</span>
                 <button
                   type="button"
                   onClick={() => { setPassword(demoCredentials[role].password); }}
-                  className="text-[0.75rem] text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded hover:bg-indigo-200 transition-colors font-mono"
+                  className="text-[0.75rem] text-blue-700 bg-blue-100 px-2 py-0.5 rounded hover:bg-blue-200 transition-colors font-mono"
                 >
                   {demoCredentials[role].password}
                 </button>
@@ -179,7 +179,7 @@ export function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={`${role}@sunnyattend.com`}
-                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[0.875rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition"
+                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[0.875rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition"
               />
             </div>
             <div>
@@ -190,7 +190,7 @@ export function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[0.875rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition pr-12"
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[0.875rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition pr-12"
                 />
                 <button
                   type="button"
@@ -208,16 +208,16 @@ export function LoginPage() {
                   type="checkbox"
                   checked={remember}
                   onChange={(e) => setRemember(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-[0.8125rem] text-slate-600">Remember me</span>
               </label>
-              <a href="#" className="text-[0.8125rem] text-indigo-600 hover:text-indigo-700" style={{ fontWeight: 500 }}>Forgot password?</a>
+              <a href="#" className="text-[0.8125rem] text-blue-600 hover:text-blue-700" style={{ fontWeight: 500 }}>Forgot password?</a>
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-3.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-sm text-[0.9375rem] disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 py-3.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm text-[0.9375rem] disabled:opacity-70 disabled:cursor-not-allowed"
               style={{ fontWeight: 600 }}
             >
               {loading ? (
@@ -239,7 +239,7 @@ export function LoginPage() {
 
           <p className="text-center text-[0.8125rem] text-slate-500 mt-8">
             Don't have an account?{" "}
-            <a href="#" className="text-indigo-600 hover:text-indigo-700" style={{ fontWeight: 500 }}>Contact your admin</a>
+            <a href="#" className="text-blue-600 hover:text-blue-700" style={{ fontWeight: 500 }}>Contact your admin</a>
           </p>
         </div>
       </div>
