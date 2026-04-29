@@ -8,7 +8,18 @@ import threading
 import time
 import requests as http_requests
 from datetime import datetime
+from urllib.parse import quote
 from sklearn.neighbors import KNeighborsClassifier
+
+# Load .env manually if it exists in parent dir
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+if os.path.exists(env_path):
+    with open(env_path) as f:
+        for line in f:
+            if line.strip() and not line.startswith('#') and '=' in line:
+                k, v = line.strip().split('=', 1)
+                if k not in os.environ:
+                    os.environ[k] = v.strip('"\'')
 
 app = Flask(__name__)
 CORS(app)
@@ -18,7 +29,9 @@ facedetect = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalf
 
 # Supabase config
 SUPABASE_URL = "https://xvdrcunhridojwjtbfpc.supabase.co"
-SUPABASE_KEY = os.environ.get("VITE_SUPABASE_PUBLISHABLE_KEY", "YOUR_ANON_KEY")
+SUPABASE_KEY = os.environ.get("VITE_SUPABASE_PUBLISHABLE_KEY")
+if not SUPABASE_KEY:
+    raise ValueError("VITE_SUPABASE_PUBLISHABLE_KEY environment variable is missing. Please set it before running the server.")
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -76,10 +89,11 @@ def log_attendance(name):
     if name in logged_students:
         return
     try:
-        res = http_requests.get(f"{SUPABASE_URL}/rest/v1/students?name=eq.{name}&select=id,course", headers=HEADERS)
+        encoded_name = quote(name)
+        res = http_requests.get(f"{SUPABASE_URL}/rest/v1/students?name=eq.{encoded_name}&select=id,course", headers=HEADERS)
         data = res.json()
         if not data:
-            res = http_requests.get(f"{SUPABASE_URL}/rest/v1/students?student_id_text=eq.{name}&select=id,course", headers=HEADERS)
+            res = http_requests.get(f"{SUPABASE_URL}/rest/v1/students?student_id_text=eq.{encoded_name}&select=id,course", headers=HEADERS)
             data = res.json()
         if not data:
             logged_students.add(name)
@@ -87,12 +101,18 @@ def log_attendance(name):
         student = data[0]
         payload = {"student_id": student['id'], "status": "present", "date_attended": today}
         course_name = student.get('course', '')
-        cr = http_requests.get(f"{SUPABASE_URL}/rest/v1/courses?course_name=eq.{course_name}&select=id", headers=HEADERS)
-        cd = cr.json()
-        if cd:
-            payload["course_id"] = cd[0]['id']
-        http_requests.post(f"{SUPABASE_URL}/rest/v1/attendance", headers=HEADERS, json=payload)
-        logged_students.add(name)
+        if course_name:
+            cr = http_requests.get(f"{SUPABASE_URL}/rest/v1/courses?course_name=eq.{quote(course_name)}&select=id", headers=HEADERS)
+            cd = cr.json()
+            if cd:
+                payload["course_id"] = cd[0]['id']
+        post_res = http_requests.post(f"{SUPABASE_URL}/rest/v1/attendance", headers=HEADERS, json=payload)
+        
+        # If successfully logged or uniquely constrained (409 Conflict)
+        if post_res.status_code in (200, 201, 204, 409):
+            logged_students.add(name)
+        else:
+            print(f"Failed to log attendance. HTTP {post_res.status_code}: {post_res.text}")
     except Exception as e:
         print(f"DB error: {e}")
 
