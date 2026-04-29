@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Search, Plus, Filter, Edit, Trash2, BookOpen,
-  ChevronLeft, ChevronRight, X, Loader2, AlertCircle, Users, Clock, MapPin,
+  Search, Plus, Filter, Edit, Trash2, Users, Clock, MapPin,
+  ChevronLeft, ChevronRight, Loader2, AlertCircle, UserPlus, CheckCircle
 } from "lucide-react";
 import { StatusBadge } from "../components/shared/StatusBadge";
 import {
   getCourses, createCourse, updateCourse, deleteCourse,
-  type Course,
+  getStudents, updateStudent,
+  type Course, type Student
 } from "../lib/api";
+
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 
 const emptyForm: { code: string; name: string; teacher: string; schedule: string; room: string; students: number; status: "active" | "inactive" } = {
   code: "", name: "", teacher: "", schedule: "", room: "", students: 0, status: "active",
@@ -28,6 +36,12 @@ export function AdminCourses() {
   const [editCourse, setEditCourse] = useState<Course | null>(null);
   const [form, setForm]             = useState(emptyForm);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // ── Enrollment State ─────────────────────────────────
+  const [enrollCourse, setEnrollCourse] = useState<Course | null>(null);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [enrollSearch, setEnrollSearch] = useState("");
 
   const fetchCourses = useCallback(async () => {
     setLoading(true);
@@ -56,6 +70,7 @@ export function AdminCourses() {
   const totalPages = Math.ceil(filtered.length / perPage) || 1;
   const paginated  = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
+  // ── CRUD Helpers ─────────────────────────────────────
   const openAdd = () => {
     setEditCourse(null);
     setForm(emptyForm);
@@ -100,29 +115,63 @@ export function AdminCourses() {
     }
   };
 
+  // ── Enrollment logic ─────────────────────────────────
+  const openEnrollment = async (c: Course) => {
+    setEnrollCourse(c);
+    setLoadingStudents(true);
+    setEnrollSearch("");
+    try {
+      const data = await getStudents();
+      setAllStudents(data);
+    } catch (err) {
+      console.error("Failed to fetch students for enrollment", err);
+    } finally {
+      setLoadingStudents(false);
+    }
+  };
+
+  const closeEnrollment = () => { setEnrollCourse(null); setAllStudents([]); };
+
+  const toggleStudentEnrollment = async (student: Student) => {
+    if (!enrollCourse) return;
+    const isEnrolled = student.course === enrollCourse.name;
+    const newCourse = isEnrolled ? "Unassigned" : enrollCourse.name;
+    
+    // Optimistic update
+    setAllStudents(prev => prev.map(s => s.id === student.id ? { ...s, course: newCourse } : s));
+    
+    try {
+      await updateStudent(student.id, { course: newCourse });
+    } catch (err) {
+      console.error("Failed to update student course", err);
+      // Revert on failure
+      setAllStudents(prev => prev.map(s => s.id === student.id ? { ...s, course: student.course } : s));
+    }
+  };
+
+  const filteredStudents = allStudents.filter(s => 
+    s.name.toLowerCase().includes(enrollSearch.toLowerCase()) || 
+    s.studentId.toLowerCase().includes(enrollSearch.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-[1.25rem] text-slate-900" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>
-            Course Management
-          </h2>
-          <p className="text-[0.8125rem] text-slate-500">
+          <h2 className="text-2xl font-semibold text-slate-900 tracking-tight">Course Management</h2>
+          <p className="text-sm text-slate-500">
             {loading ? "Loading…" : `${courses.length} courses registered`}
           </p>
         </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-[0.8125rem] hover:bg-indigo-700 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" /> Add Course
-        </button>
+        <Button onClick={openAdd} className="bg-blue-600 hover:bg-blue-700">
+          <Plus className="w-4 h-4 mr-2" /> Add Course
+        </Button>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-[0.8125rem]">
+        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {error}
           <button onClick={fetchCourses} className="ml-auto underline hover:no-underline">Retry</button>
@@ -133,263 +182,275 @@ export function AdminCourses() {
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center gap-4">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
+          <Input
             placeholder="Search courses…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
+            className="pl-9 bg-slate-50 border-slate-200"
           />
         </div>
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-slate-400" />
-          <select
-            value={filterStatus}
-            onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] text-slate-600 focus:outline-none"
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+          <Select value={filterStatus} onValueChange={(val) => { setFilterStatus(val); setCurrentPage(1); }}>
+            <SelectTrigger className="w-[180px] bg-slate-50 border-slate-200">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {/* Course Cards Grid */}
-      {loading ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-[0.8125rem]">Loading courses…</span>
-        </div>
-      ) : paginated.length === 0 ? (
-        <div className="text-center py-16 text-[0.8125rem] text-slate-400">No courses found</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {paginated.map((course) => (
-            <div key={course.id} className="bg-white rounded-xl border border-slate-200 p-5 hover:border-indigo-200 hover:shadow-sm transition-all group">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-cyan-100 rounded-xl flex items-center justify-center">
-                    <BookOpen className="w-5 h-5 text-indigo-600" />
-                  </div>
-                  <div>
-                    <p className="text-[0.9375rem] text-slate-900" style={{ fontWeight: 600 }}>{course.code}</p>
-                    <p className="text-[0.75rem] text-slate-500 mt-0.5">{course.name}</p>
-                  </div>
-                </div>
-                <StatusBadge variant={course.status} dot>{course.status}</StatusBadge>
-              </div>
-
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center gap-2 text-[0.8125rem] text-slate-600">
-                  <Users className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{course.teacher}</span>
-                </div>
-                <div className="flex items-center gap-2 text-[0.8125rem] text-slate-600">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{course.schedule || "Not scheduled"}</span>
-                </div>
-                <div className="flex items-center gap-2 text-[0.8125rem] text-slate-600">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{course.room || "TBD"}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                <span className="text-[0.8125rem] text-indigo-600" style={{ fontWeight: 500 }}>
-                  {course.students} students
-                </span>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => openEdit(course)}
-                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                    aria-label="Edit"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirm(course.id)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {!loading && (
-        <div className="flex items-center justify-between">
-          <p className="text-[0.8125rem] text-slate-500">
-            Showing {filtered.length === 0 ? 0 : (currentPage - 1) * perPage + 1}–{Math.min(currentPage * perPage, filtered.length)} of {filtered.length}
-          </p>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 disabled:opacity-30"
-              aria-label="Previous"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => (
-              <button
-                key={i + 1}
-                onClick={() => setCurrentPage(i + 1)}
-                className={`w-8 h-8 rounded-lg text-[0.8125rem] transition-colors ${
-                  currentPage === i + 1 ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {i + 1}
-              </button>
-            ))}
-            <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 disabled:opacity-30"
-              aria-label="Next"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+      {/* Course Table */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading courses…</span>
           </div>
-        </div>
-      )}
+        ) : (
+          <Table>
+            <TableHeader className="bg-slate-50">
+              <TableRow>
+                <TableHead>Course Name</TableHead>
+                <TableHead>Instructor</TableHead>
+                <TableHead className="hidden md:table-cell">Schedule</TableHead>
+                <TableHead className="hidden lg:table-cell">Room</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginated.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12 text-sm text-slate-400">
+                    No records found. Click 'Add Course' to get started.
+                  </TableCell>
+                </TableRow>
+              ) : paginated.map((course) => (
+                <TableRow key={course.id}>
+                  <TableCell>
+                    <div>
+                      <p className="text-sm text-slate-900 font-medium">{course.code}</p>
+                      <p className="text-xs text-slate-500">{course.name}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                      <Users className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{course.teacher}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{course.schedule || "Not scheduled"}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{course.room || "TBD"}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge variant={course.status} dot>{course.status}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEnrollment(course)} className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 px-2 text-xs">
+                        <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                        Enroll
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(course)} className="text-slate-400 hover:text-blue-600 h-8 w-8">
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(course.id)} className="text-slate-400 hover:text-red-600 h-8 w-8">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        {/* Pagination */}
+        {!loading && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+            <p className="text-sm text-slate-500">
+              Showing {filtered.length === 0 ? 0 : (currentPage - 1) * perPage + 1}–{Math.min(currentPage * perPage, filtered.length)} of {filtered.length}
+            </p>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Add / Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeModal} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[1.125rem] text-slate-900" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 600 }}>
-                {editCourse ? "Edit Course" : "Add New Course"}
-              </h3>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 p-1" aria-label="Close">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Course Code</label>
-                  <input
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                    placeholder="CS-301"
-                    value={form.code}
-                    onChange={(e) => setForm({ ...form, code: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Status</label>
-                  <select
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none"
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value as "active" | "inactive" })}
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{editCourse ? "Edit Course" : "Add New Course"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Course Code</Label>
+                <Input placeholder="CS-301" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
               </div>
-              <div>
-                <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Course Name</label>
-                <input
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                  placeholder="Data Structures & Algorithms"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Instructor</label>
-                <input
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                  placeholder="Dr. Smith"
-                  value={form.teacher}
-                  onChange={(e) => setForm({ ...form, teacher: e.target.value })}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Schedule</label>
-                  <input
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                    placeholder="Mon/Wed 9:00 AM"
-                    value={form.schedule}
-                    onChange={(e) => setForm({ ...form, schedule: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Room</label>
-                  <input
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                    placeholder="Room 204"
-                    value={form.room}
-                    onChange={(e) => setForm({ ...form, room: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[0.8125rem] text-slate-700 mb-1.5 font-medium">Students Enrolled</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
-                  placeholder="30"
-                  value={form.students}
-                  onChange={(e) => setForm({ ...form, students: Number(e.target.value) })}
-                />
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={val => setForm({...form, status: val as "active" | "inactive"})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={closeModal}
-                className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-lg text-[0.8125rem] hover:bg-slate-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex-1 py-2.5 bg-indigo-600 text-white rounded-lg text-[0.8125rem] hover:bg-indigo-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editCourse ? "Save Changes" : "Add Course"}
-              </button>
+            <div className="space-y-2">
+              <Label>Course Name</Label>
+              <Input placeholder="Data Structures & Algorithms" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Instructor</Label>
+              <Input placeholder="Dr. Smith" value={form.teacher} onChange={(e) => setForm({ ...form, teacher: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Schedule</Label>
+                <Input placeholder="Mon/Wed 9:00 AM" value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Room</Label>
+                <Input placeholder="Room 204" value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeModal}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {editCourse ? "Save Changes" : "Add Course"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* Delete Confirm Dialog */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-[1rem] text-slate-900 font-semibold">Delete Course?</h3>
-            <p className="text-[0.8125rem] text-slate-500">This action cannot be undone. The course and its schedule will be permanently removed.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-lg text-[0.8125rem] hover:bg-slate-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-[0.8125rem] hover:bg-red-700 transition-colors"
-              >
-                Delete
-              </button>
+      {/* Delete Confirm */}
+      <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Course?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. The course and its schedule will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteConfirm && handleDelete(deleteConfirm)}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Enrollment Dialog */}
+      <Dialog open={!!enrollCourse} onOpenChange={(open) => !open && closeEnrollment()}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Enroll Students</DialogTitle>
+            <DialogDescription>
+              Assign students to <span className="font-semibold text-slate-900">{enrollCourse?.code} - {enrollCourse?.name}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-hidden flex flex-col gap-4 py-4 min-h-[300px]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="Search students by name or ID..."
+                value={enrollSearch}
+                onChange={(e) => setEnrollSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-lg">
+              {loadingStudents ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-12">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <span className="text-sm">Loading students...</span>
+                </div>
+              ) : filteredStudents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-12">
+                  <span className="text-sm">No students found.</span>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                    <TableRow>
+                      <TableHead>Student</TableHead>
+                      <TableHead>SBRN</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredStudents.map(student => {
+                      const isEnrolled = student.course === enrollCourse?.name;
+                      return (
+                        <TableRow key={student.id}>
+                          <TableCell className="font-medium text-sm text-slate-900">{student.name}</TableCell>
+                          <TableCell className="text-xs text-slate-500">{student.studentId}</TableCell>
+                          <TableCell className="text-right">
+                            {isEnrolled ? (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => toggleStudentEnrollment(student)}
+                                className="border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-red-50 hover:text-red-700 hover:border-red-200 w-[100px]"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5 mr-1.5" /> Enrolled
+                              </Button>
+                            ) : (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => toggleStudentEnrollment(student)}
+                                className="text-blue-600 hover:bg-blue-50 hover:text-blue-700 w-[100px]"
+                              >
+                                Enroll
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </div>
           </div>
-        </div>
-      )}
+          
+          <DialogFooter>
+            <Button onClick={closeEnrollment} className="bg-slate-900 text-white hover:bg-slate-800">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
