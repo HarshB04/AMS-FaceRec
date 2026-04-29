@@ -31,6 +31,12 @@ except Exception as e:
     print("Data files not found. Run add_faces.py first to register a user.")
     exit()
 
+# Ensure data consistency
+if len(FACES) != len(LABELS):
+    print(f"Data corruption detected! FACES length ({len(FACES)}) does not match LABELS length ({len(LABELS)}).")
+    print("Please delete the 'data' folder contents and re-enroll users.")
+    exit()
+
 # Train KNN Model
 knn = KNeighborsClassifier(n_neighbors=5)
 knn.fit(FACES, LABELS)

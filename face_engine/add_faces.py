@@ -57,17 +57,22 @@ cv2.destroyAllWindows()
 
 # Process data
 faces_data = np.asarray(faces_data)
-faces_data = faces_data.reshape(100, -1) # Flatten
+num_faces = len(faces_data)
+if num_faces == 0:
+    print("No faces captured. Exiting.")
+    exit()
+
+faces_data = faces_data.reshape(num_faces, -1) # Flatten
 
 # Handle names
 if 'names.pkl' not in os.listdir('data/'):
-    names = [name] * 100
+    names = [name] * num_faces
     with open('data/names.pkl', 'wb') as f:
         pickle.dump(names, f)
 else:
     with open('data/names.pkl', 'rb') as f:
         names = pickle.load(f)
-    names = names + [name] * 100
+    names = names + [name] * num_faces
     with open('data/names.pkl', 'wb') as f:
         pickle.dump(names, f)
 
