@@ -28,7 +28,8 @@ CREATE TABLE attendance (
     student_id BIGINT REFERENCES students(id),
     course_id BIGINT REFERENCES courses(id),
     date_attended DATE NOT NULL DEFAULT CURRENT_DATE,
-    status TEXT DEFAULT 'absent' CHECK (status IN ('present', 'absent', 'late'))
+    status TEXT DEFAULT 'absent' CHECK (status IN ('present', 'absent', 'late')),
+    UNIQUE (student_id, course_id, date_attended)
 );
 
 CREATE TABLE instructors (
@@ -42,4 +43,47 @@ CREATE TABLE course_instructors (
     instructor_id BIGINT REFERENCES instructors(id),
     PRIMARY KEY (course_id, instructor_id)
 );
+
+-- Security: Row Level Security (RLS)
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE instructors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_instructors ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing basic policies if any (in case this is re-run)
+DROP POLICY IF EXISTS "Allow authenticated read access" ON students;
+DROP POLICY IF EXISTS "Allow authenticated read access" ON courses;
+DROP POLICY IF EXISTS "Allow authenticated read access" ON attendance;
+DROP POLICY IF EXISTS "Allow authenticated read access" ON instructors;
+DROP POLICY IF EXISTS "Allow authenticated read access" ON course_instructors;
+DROP POLICY IF EXISTS "Allow authenticated insert attendance" ON attendance;
+
+-- ADMIN POLICIES (Can do everything)
+CREATE POLICY "Admin All students" ON students FOR ALL TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'admin');
+CREATE POLICY "Admin All courses" ON courses FOR ALL TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'admin');
+CREATE POLICY "Admin All attendance" ON attendance FOR ALL TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'admin');
+CREATE POLICY "Admin All instructors" ON instructors FOR ALL TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'admin');
+CREATE POLICY "Admin All course_instructors" ON course_instructors FOR ALL TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'admin');
+
+-- TEACHER POLICIES (Can read courses, students, and attendance. Can insert/update attendance)
+CREATE POLICY "Teacher Select courses" ON courses FOR SELECT TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'teacher');
+CREATE POLICY "Teacher Select students" ON students FOR SELECT TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'teacher');
+CREATE POLICY "Teacher Select attendance" ON attendance FOR SELECT TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'teacher');
+CREATE POLICY "Teacher Insert attendance" ON attendance FOR INSERT TO authenticated WITH CHECK (auth.jwt() -> 'user_metadata' ->> 'role' = 'teacher');
+CREATE POLICY "Teacher Update attendance" ON attendance FOR UPDATE TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'teacher');
+CREATE POLICY "Teacher Select instructors" ON instructors FOR SELECT TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'teacher');
+CREATE POLICY "Teacher Select course_instructors" ON course_instructors FOR SELECT TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'teacher');
+
+-- STUDENT POLICIES (Can read their own student record and attendance)
+CREATE POLICY "Student Select own record" ON students FOR SELECT TO authenticated 
+USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'student' AND email = auth.jwt() ->> 'email');
+
+CREATE POLICY "Student Select own attendance" ON attendance FOR SELECT TO authenticated 
+USING (
+  auth.jwt() -> 'user_metadata' ->> 'role' = 'student' AND 
+  student_id IN (SELECT id FROM students WHERE email = auth.jwt() ->> 'email')
+);
+
+CREATE POLICY "Student Select courses" ON courses FOR SELECT TO authenticated USING (auth.jwt() -> 'user_metadata' ->> 'role' = 'student');
 
