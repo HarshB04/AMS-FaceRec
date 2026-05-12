@@ -343,7 +343,7 @@ app.get("/stats/admin", async (c: Context) => {
       supabase.from("attendance").select("status"),
     ]);
 
-    const totalPresent = attendance?.filter((a: any) => a.status === "present").length ?? 0;
+    const totalPresent = attendance?.filter((a: { status: string }) => a.status === "present").length ?? 0;
     const totalRecords = attendance?.length ?? 0;
     const overallRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
 
@@ -376,7 +376,7 @@ app.get("/stats/teacher", async (c: Context) => {
       supabase.from("attendance").select("status").eq("date_attended", new Date().toISOString().split("T")[0]),
     ]);
 
-    const totalPresent = todayAttendance?.filter((a: any) => a.status === "present").length ?? 0;
+    const totalPresent = todayAttendance?.filter((a: { status: string }) => a.status === "present").length ?? 0;
     const totalRecords = todayAttendance?.length ?? 0;
     const todayRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
 
