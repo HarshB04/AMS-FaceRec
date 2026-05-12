@@ -10,7 +10,7 @@ This roadmap defines the path to upgrading the AMS-FaceRec MVP into a production
 - [ ] **Phase 2: Admin Portal Core** - Build CRUD interfaces for users, courses, and instructors.
 - [ ] **Phase 3: Face Enrollment Workflow** - Admin-led in-person face enrollment via Python engine.
 - [ ] **Phase 4: Teacher Live Dashboard** - Real-time attendance view for live classes.
-- [ ] **Phase 5: Student & Teacher Histories** - Read-only attendance schedules and profiles.
+- [x] **Phase 5: Student & Teacher Histories** - Read-only attendance schedules and profiles. ✅
 - [ ] **Phase 6: Reporting & Exporting** - CSV and PDF attendance exports.
 - [ ] **Phase 7: Weekly Digests** - Scheduled attendance summaries for teachers.
 - [ ] **Phase 8: Automated Absence Alerts** - Real-time email alerts for missing students.
@@ -82,8 +82,8 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 05-01: Student Profile and History Views
-- [ ] 05-02: Student Weekly Analysis Components
+- [x] 05-01: Student Profile and History Views
+- [x] 05-02: Student Weekly Analysis Components
 
 ### Phase 6: Reporting & Exporting
 **Goal**: Allow teachers to export attendance data.
@@ -133,7 +133,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 2. Admin Portal | 0/2 | Not started | - |
 | 3. Face Enrollment | 0/2 | Not started | - |
 | 4. Teacher Live Dashboard | 0/2 | Not started | - |
-| 5. Student Histories | 0/2 | Not started | - |
+| 5. Student Histories | 2/2 | ✅ Complete | 2026-05-12 |
 | 6. Reporting & Exporting | 0/2 | Not started | - |
 | 7. Weekly Digests | 0/1 | Not started | - |
 | 8. Absence Alerts | 0/2 | Not started | - |
