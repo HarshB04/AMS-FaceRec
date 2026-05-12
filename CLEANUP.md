@@ -26,6 +26,20 @@
 
 ---
 
+## ⚠️ Do NOT Remove — Critical Files
+
+The following files look like tooling/config but are **required** for the Edge Function to deploy and run correctly:
+
+| File | Purpose |
+|------|---------|
+| `supabase/functions/server/deno.json` | Defines import maps for `hono`, `hono/cors`, `hono/logger`, and `@supabase/supabase-js`. Without this, Deno cannot resolve any imports in `index.ts`. Also sets `compilerOptions.lib` to `deno.window` for correct type checking. |
+| `supabase/functions/server/deno.lock` | Locks the exact versions of all resolved Deno/npm/jsr dependencies. Ensures reproducible builds on Supabase's deployment servers. |
+| `supabase/functions/deno.json` | Global compiler options for all Edge Functions (`strict: true`, `lib: deno.window`, `allowJs: true`). Inherited by all functions in the `functions/` directory. |
+
+> **Rule:** Never delete files from `supabase/functions/` without verifying they are not Deno config or lock files.
+
+---
+
 ## Canonical Locations (What to Use Instead)
 
 | Purpose | Correct File |
