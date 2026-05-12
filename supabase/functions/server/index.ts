@@ -1,4 +1,4 @@
-import { Hono } from "npm:hono";
+import { Hono, Context } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
@@ -25,12 +25,12 @@ const supabase = createClient(
 // ────────────────────────────────────────────────
 // HEALTH
 // ────────────────────────────────────────────────
-app.get("/health", (c) => c.json({ status: "ok" }));
+app.get("/health", (c: Context) => c.json({ status: "ok" }));
 
 // ────────────────────────────────────────────────
 // SEED
 // ────────────────────────────────────────────────
-app.post("/seed", async (c) => {
+app.post("/seed", async (c: Context) => {
   try {
     const { data: existing } = await supabase.from("students").select("id").limit(1);
     if (existing && existing.length > 0) {
@@ -79,7 +79,7 @@ app.post("/seed", async (c) => {
 // ────────────────────────────────────────────────
 // STUDENTS
 // ────────────────────────────────────────────────
-app.get("/students", async (c) => {
+app.get("/students", async (c: Context) => {
   try {
     const { data, error } = await supabase.from("students").select("*");
     if (error) throw error;
@@ -89,7 +89,7 @@ app.get("/students", async (c) => {
   }
 });
 
-app.get("/students/:id", async (c) => {
+app.get("/students/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const { data, error } = await supabase.from("students").select("*").eq("id", id).maybeSingle();
@@ -101,7 +101,7 @@ app.get("/students/:id", async (c) => {
   }
 });
 
-app.post("/students", async (c) => {
+app.post("/students", async (c: Context) => {
   try {
     const body = await c.req.json();
     const { data, error } = await supabase.from("students").insert(body).select().single();
@@ -112,7 +112,7 @@ app.post("/students", async (c) => {
   }
 });
 
-app.put("/students/:id", async (c) => {
+app.put("/students/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
@@ -124,7 +124,7 @@ app.put("/students/:id", async (c) => {
   }
 });
 
-app.delete("/students/:id", async (c) => {
+app.delete("/students/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const { error } = await supabase.from("students").delete().eq("id", id);
@@ -138,7 +138,7 @@ app.delete("/students/:id", async (c) => {
 // ────────────────────────────────────────────────
 // COURSES
 // ────────────────────────────────────────────────
-app.get("/courses", async (c) => {
+app.get("/courses", async (c: Context) => {
   try {
     const { data, error } = await supabase.from("courses").select("*");
     if (error) throw error;
@@ -148,7 +148,7 @@ app.get("/courses", async (c) => {
   }
 });
 
-app.post("/courses", async (c) => {
+app.post("/courses", async (c: Context) => {
   try {
     const body = await c.req.json();
     const { data, error } = await supabase.from("courses").insert(body).select().single();
@@ -159,7 +159,7 @@ app.post("/courses", async (c) => {
   }
 });
 
-app.put("/courses/:id", async (c) => {
+app.put("/courses/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
@@ -171,7 +171,7 @@ app.put("/courses/:id", async (c) => {
   }
 });
 
-app.delete("/courses/:id", async (c) => {
+app.delete("/courses/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const { error } = await supabase.from("courses").delete().eq("id", id);
@@ -185,7 +185,7 @@ app.delete("/courses/:id", async (c) => {
 // ────────────────────────────────────────────────
 // ATTENDANCE
 // ────────────────────────────────────────────────
-app.get("/attendance", async (c) => {
+app.get("/attendance", async (c: Context) => {
   try {
     const { data, error } = await supabase.from("attendance").select("*, students(*), courses(*)");
     if (error) throw error;
@@ -195,7 +195,7 @@ app.get("/attendance", async (c) => {
   }
 });
 
-app.post("/attendance", async (c) => {
+app.post("/attendance", async (c: Context) => {
   try {
     const body = await c.req.json();
     const { data, error } = await supabase.from("attendance").insert(body).select().single();
@@ -206,7 +206,7 @@ app.post("/attendance", async (c) => {
   }
 });
 
-app.delete("/attendance/:id", async (c) => {
+app.delete("/attendance/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const { error } = await supabase.from("attendance").delete().eq("id", id);
@@ -220,7 +220,7 @@ app.delete("/attendance/:id", async (c) => {
 // ────────────────────────────────────────────────
 // INSTRUCTORS
 // ────────────────────────────────────────────────
-app.get("/instructors", async (c) => {
+app.get("/instructors", async (c: Context) => {
   try {
     const { data, error } = await supabase.from("instructors").select("*");
     if (error) throw error;
@@ -230,7 +230,7 @@ app.get("/instructors", async (c) => {
   }
 });
 
-app.get("/instructors/:id", async (c) => {
+app.get("/instructors/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const { data, error } = await supabase.from("instructors").select("*").eq("id", id).maybeSingle();
@@ -242,7 +242,7 @@ app.get("/instructors/:id", async (c) => {
   }
 });
 
-app.post("/instructors", async (c) => {
+app.post("/instructors", async (c: Context) => {
   try {
     const body = await c.req.json();
     const { data, error } = await supabase.from("instructors").insert(body).select().single();
@@ -253,7 +253,7 @@ app.post("/instructors", async (c) => {
   }
 });
 
-app.put("/instructors/:id", async (c) => {
+app.put("/instructors/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
@@ -265,7 +265,7 @@ app.put("/instructors/:id", async (c) => {
   }
 });
 
-app.delete("/instructors/:id", async (c) => {
+app.delete("/instructors/:id", async (c: Context) => {
   try {
     const id = c.req.param("id");
     await supabase.from("course_instructors").delete().eq("instructor_id", id);
@@ -280,7 +280,7 @@ app.delete("/instructors/:id", async (c) => {
 // ────────────────────────────────────────────────
 // COURSE-INSTRUCTOR ASSIGNMENTS
 // ────────────────────────────────────────────────
-app.get("/course-instructors", async (c) => {
+app.get("/course-instructors", async (c: Context) => {
   try {
     const { data, error } = await supabase
       .from("course_instructors")
@@ -292,7 +292,7 @@ app.get("/course-instructors", async (c) => {
   }
 });
 
-app.post("/course-instructors", async (c) => {
+app.post("/course-instructors", async (c: Context) => {
   try {
     const body = await c.req.json();
     const { data, error } = await supabase.from("course_instructors").insert(body).select().single();
@@ -303,7 +303,7 @@ app.post("/course-instructors", async (c) => {
   }
 });
 
-app.delete("/course-instructors/:courseId/:instructorId", async (c) => {
+app.delete("/course-instructors/:courseId/:instructorId", async (c: Context) => {
   try {
     const courseId     = c.req.param("courseId");
     const instructorId = c.req.param("instructorId");
@@ -322,7 +322,7 @@ app.delete("/course-instructors/:courseId/:instructorId", async (c) => {
 // ────────────────────────────────────────────────
 // STATS
 // ────────────────────────────────────────────────
-app.get("/stats/admin", async (c) => {
+app.get("/stats/admin", async (c: Context) => {
   try {
     const [
       { count: totalStudents },
@@ -359,7 +359,7 @@ app.get("/stats/admin", async (c) => {
   }
 });
 
-app.get("/stats/teacher", async (c) => {
+app.get("/stats/teacher", async (c: Context) => {
   try {
     const [
       { count: totalStudents },
@@ -386,7 +386,7 @@ app.get("/stats/teacher", async (c) => {
   }
 });
 
-app.get("/stats/student", async (c) => {
+app.get("/stats/student", async (c: Context) => {
   try {
     const { data: student } = await supabase.from("students").select("*").limit(1).maybeSingle();
     return c.json({

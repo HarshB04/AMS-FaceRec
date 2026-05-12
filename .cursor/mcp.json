@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "jetro": {
+      "type": "stdio",
+      "command": "C:\\Users\\Bhawani\\.jetro\\runtime\\node-win32-x64.exe",
+      "args": [
+        "C:\\Users\\Bhawani\\.jetro\\mcp-server\\index.js"
+      ],
+      "env": {
+        "JET_WORKSPACE": "c:\\ME\\__Marjor\\AMS-FaceRec",
+        "JET_API_URL": "https://api.jetro.ai",
+        "PATH": "C:\\Users\\Bhawani\\.jetro\\runtime;C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\NvDLISR;C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Program Files\\Git\\cmd;C:\\Program Files\\dotnet\\;C:\\Program Files\\MySQL\\MySQL Shell 8.0\\bin\\;C:\\Users\\Bhawani\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\Bhawani\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Users\\Bhawani\\.pyenv\\pyenv-win\\bin;C:\\Users\\Bhawani\\.pyenv\\pyenv-win\\shims;C:\\Users\\Bhawani\\AppData\\Local\\Python\\bin;C:\\Users\\Bhawani\\AppData\\Local\\Programs\\Ollama;C:\\Users\\Bhawani\\AppData\\Local\\nvm;C:\\nvm4w\\nodejs;C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin;C:\\Users\\Bhawani\\AppData\\Local\\Microsoft\\WinGet\\Packages\\DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe;C:\\Users\\Bhawani\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Windows\\System32;C:\\Windows\\System32\\wbem;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\;C:\\Users\\Bhawani\\AppData\\Local\\Microsoft\\WinGet\\Packages\\yt-dlp.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-N-123778-g3b55818764-win64-gpl\\bin;C:\\Users\\Bhawani\\AppData\\Local\\Programs\\cursor\\resources\\app\\bin"
+      }
+    }
+  }
+}
