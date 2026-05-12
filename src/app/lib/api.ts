@@ -1,4 +1,4 @@
-import { supabase } from "../../../utils/supabase/client";
+import { supabase } from "@/lib/supabase";
 
 // ── Students ──────────────────────────────────────────────────────────────────
 export interface Student {

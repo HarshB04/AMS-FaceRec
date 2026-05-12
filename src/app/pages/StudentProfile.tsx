@@ -3,7 +3,7 @@ import {
   User, Mail, BookOpen, Camera, CheckCircle2, XCircle,
   Key, Upload, Loader2, AlertCircle, Save,
 } from "lucide-react";
-import { supabase } from "../../../utils/supabase/client";
+import { supabase } from "@/lib/supabase";
 import {
   getCourses,
   getWeeklyAttendanceAnalysis,

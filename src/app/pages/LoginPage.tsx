@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Sun, Eye, EyeOff, ArrowRight, ShieldCheck, GraduationCap, User } from "lucide-react";
-import { supabase } from "../../../utils/supabase/client";
+import { supabase } from "@/lib/supabase";
 
 const demoCredentials = {
   admin: { email: "admin@sunnyattend.com", password: "admin123" },
