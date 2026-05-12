@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 const demoCredentials = {
   admin: { email: "admin@sunnyattend.com", password: "admin123" },
   teacher: { email: "dr.smith@sunnyattend.com", password: "teacher123" },
-  student: { email: "sarah.j@sunnyattend.com", password: "student123" },
+  student: { email: "STU-001", password: "password" },
 };
 
 const roleIcons = {
@@ -27,7 +27,7 @@ export function LoginPage() {
 
   const handleRoleSwitch = (r: "admin" | "teacher" | "student") => {
     setRole(r);
-    setEmail(demoCredentials[r].email);
+    setEmail(demoCredentials[r].email); // For students this will populate the SBRN field if we repurpose it, but wait: student demo uses email. We should change student demo credential to SBRN.
     setPassword(demoCredentials[r].password);
     setError("");
   };
@@ -44,8 +44,25 @@ export function LoginPage() {
     setLoading(true);
     
     try {
+      let authEmail = email;
+
+      if (role === "student") {
+        // Look up email by SBRN
+        const res = await fetch("https://lngcsgcqtwdgyrvmykhy.supabase.co/functions/v1/server/lookup-sbrn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sbrn: email }), // email state holds SBRN for students
+        });
+        
+        if (!res.ok) {
+          throw new Error("Student ID (SBRN) not found.");
+        }
+        const data = await res.json();
+        authEmail = data.email;
+      }
+
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: authEmail,
         password,
       });
 
@@ -142,7 +159,7 @@ export function LoginPage() {
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[0.75rem] text-blue-500">Email:</span>
+                <span className="text-[0.75rem] text-blue-500">{role === "student" ? "SBRN:" : "Email:"}</span>
                 <button
                   type="button"
                   onClick={() => { setEmail(demoCredentials[role].email); }}
@@ -173,12 +190,14 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-[0.8125rem] text-slate-700 mb-1.5" style={{ fontWeight: 500 }}>Email address</label>
+              <label className="block text-[0.8125rem] text-slate-700 mb-1.5" style={{ fontWeight: 500 }}>
+                {role === "student" ? "SBRN (Student ID)" : "Email address"}
+              </label>
               <input
-                type="email"
+                type={role === "student" ? "text" : "email"}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={`${role}@sunnyattend.com`}
+                placeholder={role === "student" ? "e.g. STU-001" : `${role}@sunnyattend.com`}
                 className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[0.875rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition"
               />
             </div>

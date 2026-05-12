@@ -41,7 +41,7 @@ export const getStudent = async (id: string) => {
   return mapStudent(data);
 };
 
-export const createStudent = async (data: Omit<Student, "id">) => {
+export const createStudent = async (data: Omit<Student, "id"> & { password?: string }) => {
   const body = {
     name: data.name,
     email: data.email,
@@ -49,7 +49,8 @@ export const createStudent = async (data: Omit<Student, "id">) => {
     course: data.course,
     face_enrolled: data.faceEnrolled,
     status: data.status,
-    attendance_rate: data.attendance
+    attendance_rate: data.attendance,
+    password: data.password
   };
   const { data: res, error } = await supabase.from("students").insert(body).select().single();
   if (error) throw new Error(error.message || JSON.stringify(error));

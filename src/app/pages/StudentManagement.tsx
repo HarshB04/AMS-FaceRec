@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 const COURSES = ["Computer Science", "Mathematics", "Engineering", "Physics"];
 
 const emptyForm = {
-  firstName: "", lastName: "", email: "", studentId: "", course: "Computer Science", faceEnrolled: false
+  firstName: "", lastName: "", email: "", studentId: "", course: "Computer Science", faceEnrolled: false, password: ""
 };
 
 export function StudentManagement() {
@@ -77,7 +77,7 @@ export function StudentManagement() {
   const openEdit = (s: Student) => {
     setEditStudent(s);
     const [firstName, ...rest] = s.name.split(" ");
-    setForm({ firstName, lastName: rest.join(" "), email: s.email, studentId: s.studentId, course: s.course, faceEnrolled: s.faceEnrolled });
+    setForm({ firstName, lastName: rest.join(" "), email: s.email, studentId: s.studentId, course: s.course, faceEnrolled: s.faceEnrolled, password: "" });
     setShowModal(true);
   };
 
@@ -96,10 +96,12 @@ export function StudentManagement() {
         faceEnrolled: editStudent?.faceEnrolled ?? form.faceEnrolled,
         status: (editStudent?.status ?? "active") as "active" | "inactive",
         attendance: editStudent?.attendance ?? 0,
+        password: form.password || undefined,
       };
       if (editStudent) {
         await updateStudent(editStudent.id, payload);
       } else {
+        if (!form.password) throw new Error("Password is required for new students");
         await createStudent(payload);
       }
       await fetchStudents();
@@ -348,6 +350,12 @@ export function StudentManagement() {
                 </SelectContent>
               </Select>
             </div>
+            {!editStudent && (
+              <div className="space-y-2">
+                <Label>Login Password</Label>
+                <Input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Set initial password" />
+              </div>
+            )}
             {!editStudent && (
               <div className="space-y-2">
                 <Label>Face Enrollment</Label>

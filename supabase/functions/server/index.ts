@@ -109,11 +109,38 @@ app.get("/students/:id", async (c: Context) => {
 app.post("/students", async (c: Context) => {
   try {
     const body = await c.req.json();
+    
+    if (body.password) {
+      const { error: authError } = await supabase.auth.admin.createUser({
+        email: body.email,
+        password: body.password,
+        email_confirm: true,
+        user_metadata: { role: "student" }
+      });
+      if (authError) {
+        console.error("Auth creation failed:", authError);
+        // Continue even if auth fails (e.g., user already exists) or handle it
+      }
+      delete body.password;
+    }
+
     const { data, error } = await supabase.from("students").insert(body).select().single();
     if (error) throw error;
     return c.json(data, 201);
   } catch (err: unknown) {
     return c.json({ error: `Failed to create student: ${errMsg(err)}` }, 500);
+  }
+});
+
+app.post("/lookup-sbrn", async (c: Context) => {
+  try {
+    const { sbrn } = await c.req.json();
+    const { data, error } = await supabase.from("students").select("email").eq("student_id_text", sbrn).maybeSingle();
+    if (error) throw error;
+    if (!data) return c.json({ error: "SBRN not found" }, 404);
+    return c.json({ email: data.email });
+  } catch (err: unknown) {
+    return c.json({ error: `Failed to lookup SBRN: ${errMsg(err)}` }, 500);
   }
 });
 
