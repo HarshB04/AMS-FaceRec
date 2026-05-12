@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Download, Filter, Search, Calendar,
   ChevronLeft, ChevronRight, FileText, FileSpreadsheet,
@@ -99,6 +101,45 @@ export function AttendanceReports() {
     URL.revokeObjectURL(url);
   };
 
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    
+    // Add Report Header
+    doc.setFontSize(18);
+    doc.text("Attendance Report", 14, 22);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 30);
+    doc.text(`Period: ${dateFrom} to ${dateTo}`, 14, 36);
+    doc.text(`Course Filter: ${filterCourse === "all" ? "All Courses" : filterCourse}`, 14, 42);
+
+    // Prepare Table Data
+    const tableColumn = ["Date", "Course", "Teacher", "Total", "Present", "Late", "Absent", "Rate"];
+    const tableRows = filtered.map(r => [
+      r.date,
+      r.course,
+      r.teacher,
+      r.total,
+      r.present,
+      r.late,
+      r.absent,
+      `${r.rate}%`
+    ]);
+
+    // Generate Table
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 50,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [79, 70, 229] }, // Indigo 600
+    });
+
+    // Save PDF
+    doc.save(`attendance-${dateFrom}-${dateTo}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -127,8 +168,9 @@ export function AttendanceReports() {
             <FileSpreadsheet className="w-4 h-4" /> Export CSV
           </button>
           <button
-            disabled
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-red-50 text-red-700 rounded-lg text-[0.8125rem] border border-red-200 opacity-50 cursor-not-allowed"
+            onClick={exportPDF}
+            disabled={loading || filtered.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-red-50 text-red-700 rounded-lg text-[0.8125rem] hover:bg-red-100 transition-colors border border-red-200 disabled:opacity-50"
           >
             <FileText className="w-4 h-4" /> Export PDF
           </button>

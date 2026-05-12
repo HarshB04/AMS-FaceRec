@@ -95,8 +95,8 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 06-01: CSV Export logic via papaparse
-- [ ] 06-02: PDF Export logic via jspdf
+- [x] 06-01: CSV Export logic via papaparse (built-in blob utilized)
+- [x] 06-02: PDF Export logic via jspdf
 
 ### Phase 7: Weekly Digests
 **Goal**: Automated weekly attendance summaries for teachers.
@@ -134,6 +134,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 3. Face Enrollment | 0/2 | Not started | - |
 | 4. Teacher Live Dashboard | 0/2 | Not started | - |
 | 5. Student Histories | 2/2 | ✅ Complete | 2026-05-12 |
-| 6. Reporting & Exporting | 0/2 | Not started | - |
+| 6. Reporting & Exporting | 2/2 | ✅ Complete | 2026-05-13 |
 | 7. Weekly Digests | 0/1 | Not started | - |
 | 8. Absence Alerts | 0/2 | Not started | - |
