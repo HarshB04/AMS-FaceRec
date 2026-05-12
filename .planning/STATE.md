@@ -27,3 +27,8 @@ See: .planning/PROJECT.md (updated 2026-04-29)
 **Last active:** 2026-04-29
 **Stopped at:** Phase 4 UAT Completed
 **Next step:** Resume from .planning/ROADMAP.md
+
+## Accumulated Context
+
+### Pending Todos
+- 3 pending items in `.planning/todos/pending`
