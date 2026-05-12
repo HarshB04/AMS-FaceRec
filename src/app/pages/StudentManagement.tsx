@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useTransition, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Search, Plus, Filter, Camera, Edit, Trash2,
   ChevronLeft, ChevronRight, Upload, Loader2, AlertCircle,
@@ -30,8 +31,8 @@ export function StudentManagement() {
 
   const [search, setSearch]         = useState("");
   const [filterCourse, setFilterCourse] = useState("all");
-  const [currentPage, setCurrentPage]   = useState(1);
-  const perPage = 8;
+  const [isPending, startTransition]    = useTransition();
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const [showModal, setShowModal]   = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
@@ -64,8 +65,13 @@ export function StudentManagement() {
     const matchCourse = filterCourse === "all" || s.course === filterCourse;
     return matchSearch && matchCourse;
   });
-  const totalPages = Math.ceil(filtered.length / perPage) || 1;
-  const paginated  = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 64, // approximate height of a table row with avatars
+    overscan: 10,
+  });
 
   // ── modal helpers ────────────────────────────────────
   const openAdd = () => {
@@ -197,14 +203,13 @@ export function StudentManagement() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
             placeholder="Search students…"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => startTransition(() => setSearch(e.target.value))}
             className="pl-9 bg-slate-50 border-slate-200"
           />
         </div>
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-slate-400" />
-          <Select value={filterCourse} onValueChange={(val) => { setFilterCourse(val); setCurrentPage(1); }}>
+          <Select value={filterCourse} onValueChange={(val) => startTransition(() => setFilterCourse(val))}>
             <SelectTrigger className="w-[180px] bg-slate-50 border-slate-200">
               <SelectValue placeholder="All Courses" />
             </SelectTrigger>
@@ -223,94 +228,105 @@ export function StudentManagement() {
             <span className="text-sm">Loading students…</span>
           </div>
         ) : (
-          <Table>
-            <TableHeader className="bg-slate-50">
-              <TableRow>
-                <TableHead>Student</TableHead>
-                <TableHead>SBRN</TableHead>
-                <TableHead className="hidden md:table-cell">Course</TableHead>
-                <TableHead className="hidden lg:table-cell">Face Data</TableHead>
-                <TableHead className="hidden sm:table-cell">Attendance</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginated.length === 0 ? (
+          <div ref={parentRef} className="overflow-auto max-h-[600px]">
+            <Table className="relative w-full">
+              <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-sm text-slate-400">
-                    No records found. Click 'Add Student' to get started.
-                  </TableCell>
+                  <TableHead>Student</TableHead>
+                  <TableHead>SBRN</TableHead>
+                  <TableHead className="hidden md:table-cell">Course</TableHead>
+                  <TableHead className="hidden lg:table-cell">Face Data</TableHead>
+                  <TableHead className="hidden sm:table-cell">Attendance</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : paginated.map((student) => (
-                <TableRow key={student.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-xs text-blue-700 font-semibold">
-                        {student.name.split(" ").map(n => n[0]).join("")}
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-900 font-medium">{student.name}</p>
-                        <p className="text-xs text-slate-500">{student.email}</p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-slate-600">{student.studentId}</TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-slate-600">{student.course}</TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    {student.faceEnrolled ? (
-                      <span className="flex items-center gap-1.5 text-sm text-emerald-600">
-                        <Camera className="w-3.5 h-3.5" /> Enrolled
-                      </span>
-                    ) : (
-                      <button onClick={() => toggleFace(student)} className="flex items-center gap-1.5 text-sm text-amber-600 hover:text-amber-700">
-                        <Upload className="w-3.5 h-3.5" /> Capture
-                      </button>
-                    )}
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${student.attendance >= 90 ? "bg-emerald-500" : student.attendance >= 75 ? "bg-amber-500" : "bg-red-500"}`}
-                          style={{ width: `${student.attendance}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-slate-600">{student.attendance}%</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge variant={student.status} dot>{student.status}</StatusBadge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(student)} className="text-slate-400 hover:text-blue-600">
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(student.id)} className="text-slate-400 hover:text-red-600">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody
+                style={{
+                  height: `${virtualizer.getTotalSize()}px`,
+                  position: 'relative'
+                }}
+              >
+                {filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12 text-sm text-slate-400">
+                      No records found. Click 'Add Student' to get started.
+                    </TableCell>
+                  </TableRow>
+                ) : virtualizer.getVirtualItems().map((virtualRow) => {
+                  const student = filtered[virtualRow.index];
+                  return (
+                    <TableRow 
+                      key={student.id}
+                      className="absolute w-full flex items-center border-b border-slate-50"
+                      style={{
+                        top: 0,
+                        left: 0,
+                        transform: `translateY(${virtualRow.start}px)`,
+                        height: `${virtualRow.size}px`
+                      }}
+                    >
+                      <TableCell className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-xs text-blue-700 font-semibold flex-shrink-0">
+                            {student.name.split(" ").map(n => n[0]).join("")}
+                          </div>
+                          <div className="truncate">
+                            <p className="text-sm text-slate-900 font-medium truncate">{student.name}</p>
+                            <p className="text-xs text-slate-500 truncate">{student.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="flex-1 text-sm text-slate-600 truncate">{student.studentId}</TableCell>
+                      <TableCell className="flex-1 hidden md:table-cell text-sm text-slate-600 truncate">{student.course}</TableCell>
+                      <TableCell className="flex-1 hidden lg:table-cell">
+                        {student.faceEnrolled ? (
+                          <span className="flex items-center gap-1.5 text-sm text-emerald-600">
+                            <Camera className="w-3.5 h-3.5" /> Enrolled
+                          </span>
+                        ) : (
+                          <button onClick={() => toggleFace(student)} className="flex items-center gap-1.5 text-sm text-amber-600 hover:text-amber-700">
+                            <Upload className="w-3.5 h-3.5" /> Capture
+                          </button>
+                        )}
+                      </TableCell>
+                      <TableCell className="flex-1 hidden sm:table-cell">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden flex-shrink-0">
+                            <div
+                              className={`h-full rounded-full ${student.attendance >= 90 ? "bg-emerald-500" : student.attendance >= 75 ? "bg-amber-500" : "bg-red-500"}`}
+                              style={{ width: `${student.attendance}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-600">{student.attendance}%</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="flex-1">
+                        <StatusBadge variant={student.status} dot>{student.status}</StatusBadge>
+                      </TableCell>
+                      <TableCell className="flex-1 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(student)} className="text-slate-400 hover:text-blue-600">
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(student.id)} className="text-slate-400 hover:text-red-600">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
 
         {!loading && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
             <p className="text-sm text-slate-500">
-              Showing {filtered.length === 0 ? 0 : (currentPage - 1) * perPage + 1}–{Math.min(currentPage * perPage, filtered.length)} of {filtered.length}
+              {filtered.length} matching {filtered.length === 1 ? "student" : "students"}
             </p>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
           </div>
         )}
       </div>

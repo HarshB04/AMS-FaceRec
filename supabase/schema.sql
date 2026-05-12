@@ -175,3 +175,22 @@ SELECT
     END
 FROM auth.users
 ON CONFLICT (id) DO NOTHING;
+
+-- ── 5. CRON JOBS (WEEKLY DIGEST) ─────────────────────────────────────────────
+-- Requires pg_cron extension to be enabled in Supabase Dashboard.
+-- This schedules the 'weekly-digest' edge function to run every Monday at 08:00 AM.
+-- Replace project-ref with the actual project reference if running in production.
+
+-- Note: To fully activate this, the pg_net extension is required:
+-- CREATE EXTENSION IF NOT EXISTS pg_net;
+-- 
+-- SELECT cron.schedule(
+--   'weekly-attendance-digest',
+--   '0 8 * * 1', -- Every Monday at 8:00 AM
+--   $$
+--   SELECT net.http_post(
+--       url:='https://lngcsgcqtwdgyrvmykhy.supabase.co/functions/v1/weekly-digest',
+--       headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_ANON_KEY"}'::jsonb
+--   );
+--   $$
+-- );

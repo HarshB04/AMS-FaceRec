@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useTransition, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -24,8 +25,8 @@ export function AttendanceReports() {
   const [filterCourse, setFilterCourse] = useState("all");
   const [dateFrom, setDateFrom]         = useState("2026-03-01");
   const [dateTo, setDateTo]             = useState("2026-03-07");
-  const [currentPage, setCurrentPage]   = useState(1);
-  const perPage = 8;
+  const [isPending, startTransition]    = useTransition();
+  const parentRef = useRef<HTMLDivElement>(null);
 
   // ── fetch ────────────────────────────────────────────
   const fetchRecords = useCallback(async () => {
@@ -54,8 +55,12 @@ export function AttendanceReports() {
     return matchSearch && matchCourse && matchDate;
   }), [records, search, filterCourse, dateFrom, dateTo]);
 
-  const totalPages = Math.ceil(filtered.length / perPage) || 1;
-  const paginated  = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 48, // approximate height of a table row
+    overscan: 10,
+  });
 
   // ── chart data (derived from live records) ──────────
   const dailyTrend = useMemo(() => {
@@ -221,8 +226,7 @@ export function AttendanceReports() {
           <input
             type="text"
             placeholder="Search course or teacher…"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => startTransition(() => setSearch(e.target.value))}
             className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
           />
         </div>
@@ -230,7 +234,7 @@ export function AttendanceReports() {
           <Filter className="w-4 h-4 text-slate-400" />
           <select
             value={filterCourse}
-            onChange={(e) => { setFilterCourse(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => startTransition(() => setFilterCourse(e.target.value))}
             className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] text-slate-600 focus:outline-none"
           >
             <option value="all">All Courses</option>
@@ -242,14 +246,14 @@ export function AttendanceReports() {
           <input
             type="date"
             value={dateFrom}
-            onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => startTransition(() => setDateFrom(e.target.value))}
             className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] text-slate-600 focus:outline-none"
           />
           <span className="text-slate-400 text-[0.8125rem]">to</span>
           <input
             type="date"
             value={dateTo}
-            onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => startTransition(() => setDateTo(e.target.value))}
             className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] text-slate-600 focus:outline-none"
           />
         </div>
@@ -263,9 +267,12 @@ export function AttendanceReports() {
             <span className="text-[0.8125rem]">Loading attendance records…</span>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
+          <div 
+            ref={parentRef}
+            className="overflow-auto max-h-[500px]"
+          >
+            <table className="w-full relative">
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium">Date</th>
                   <th className="text-left py-3 px-4 text-[0.75rem] text-slate-500 font-medium">Course</th>
@@ -277,75 +284,65 @@ export function AttendanceReports() {
                   <th className="text-center py-3 px-4 text-[0.75rem] text-slate-500 font-medium">Rate</th>
                 </tr>
               </thead>
-              <tbody>
-                {paginated.length === 0 ? (
+              <tbody
+                style={{
+                  height: `${virtualizer.getTotalSize()}px`,
+                  position: 'relative'
+                }}
+              >
+                {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-12 text-[0.8125rem] text-slate-400">
                       No records match the selected filters
                     </td>
                   </tr>
-                ) : paginated.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                    <td className="py-3 px-4 text-[0.8125rem] text-slate-600">{row.date}</td>
-                    <td className="py-3 px-4 text-[0.8125rem] text-slate-800 font-medium">{row.course}</td>
-                    <td className="py-3 px-4 text-[0.8125rem] text-slate-600 hidden md:table-cell">{row.teacher}</td>
-                    <td className="py-3 px-4 text-[0.8125rem] text-slate-700 text-center">{row.total}</td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="text-[0.8125rem] text-emerald-600 font-medium">{row.present}</span>
-                    </td>
-                    <td className="py-3 px-4 text-center hidden sm:table-cell">
-                      <span className="text-[0.8125rem] text-amber-600">{row.late}</span>
-                    </td>
-                    <td className="py-3 px-4 text-center hidden sm:table-cell">
-                      <span className="text-[0.8125rem] text-red-500">{row.absent}</span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <StatusBadge variant={row.rate >= 95 ? "present" : row.rate >= 90 ? "info" : "warning"}>
-                        {row.rate}%
-                      </StatusBadge>
-                    </td>
-                  </tr>
-                ))}
+                ) : (
+                  virtualizer.getVirtualItems().map((virtualRow) => {
+                    const row = filtered[virtualRow.index];
+                    return (
+                      <tr 
+                        key={row.id} 
+                        className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors absolute w-full"
+                        style={{
+                          top: 0,
+                          left: 0,
+                          transform: `translateY(${virtualRow.start}px)`,
+                          height: `${virtualRow.size}px`
+                        }}
+                      >
+                        <td className="py-3 px-4 text-[0.8125rem] text-slate-600">{row.date}</td>
+                        <td className="py-3 px-4 text-[0.8125rem] text-slate-800 font-medium">{row.course}</td>
+                        <td className="py-3 px-4 text-[0.8125rem] text-slate-600 hidden md:table-cell">{row.teacher}</td>
+                        <td className="py-3 px-4 text-[0.8125rem] text-slate-700 text-center">{row.total}</td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="text-[0.8125rem] text-emerald-600 font-medium">{row.present}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center hidden sm:table-cell">
+                          <span className="text-[0.8125rem] text-amber-600">{row.late}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center hidden sm:table-cell">
+                          <span className="text-[0.8125rem] text-red-500">{row.absent}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <StatusBadge variant={row.rate >= 95 ? "present" : row.rate >= 90 ? "info" : "warning"}>
+                            {row.rate}%
+                          </StatusBadge>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* Pagination */}
+        {/* Totals / Meta */}
         {!loading && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
             <p className="text-[0.8125rem] text-slate-500">
-              Showing {filtered.length === 0 ? 0 : (currentPage - 1) * perPage + 1}–{Math.min(currentPage * perPage, filtered.length)} of {filtered.length}
+              {filtered.length} matching {filtered.length === 1 ? "record" : "records"}
             </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 disabled:opacity-30"
-                aria-label="Previous"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i + 1}
-                  onClick={() => setCurrentPage(i + 1)}
-                  className={`w-8 h-8 rounded-lg text-[0.8125rem] transition-colors ${
-                    currentPage === i + 1 ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 disabled:opacity-30"
-                aria-label="Next"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
           </div>
         )}
       </div>
