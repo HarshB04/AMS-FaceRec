@@ -14,6 +14,7 @@ This roadmap defines the path to upgrading the AMS-FaceRec MVP into a production
 - [x] **Phase 6: Reporting & Exporting** - CSV and PDF attendance exports. ✅
 - [x] **Phase 7: Weekly Digests** - Scheduled attendance summaries for teachers. ✅
 - [ ] **Phase 8: Automated Absence Alerts** - Real-time email alerts for missing students.
+- [x] **Phase 9: Student Self-Registration Backend** - Secure Express.js backend, SBRN-based registration, admin approval pipeline, email notifications. ✅
 
 ## Phase Details
 
@@ -122,10 +123,25 @@ Plans:
 - [ ] 08-01: Postgres Webhook for real-time absent trigger
 - [ ] 08-02: Edge Function for low-attendance admin alerts
 
+### Phase 9: Student Self-Registration Backend
+**Goal**: Secure Express.js backend isolating the service role key, with student self-registration (SBRN-based), admin approval/rejection workflow, and Nodemailer email notifications.
+**Depends on**: Phase 1
+**Requirements**: AUTH-05, AUTH-06, ADMIN-06, ADMIN-07
+**Success Criteria** (what must be TRUE):
+  1. Students can self-register at `/register` with SBRN, email, and password.
+  2. Admin can approve or reject registrations from `/admin/approvals` dashboard.
+  3. Approved students receive an HTML email with their SBRN and sign-in link.
+  4. Supabase service role key is never sent to the browser.
+  5. Role verification uses `public.profiles`, not JWT metadata.
+
+Plans:
+- [x] 09-01: Secure Express.js Backend Core (server, auth middleware, student CRUD)
+- [x] 09-02: Self-Registration & Admin Approval Pipeline (registration, approvals, email, frontend pages)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -137,3 +153,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 6. Reporting & Exporting | 2/2 | ✅ Complete | 2026-05-13 |
 | 7. Weekly Digests | 1/1 | ✅ Complete | 2026-05-13 |
 | 8. Absence Alerts | 0/2 | Not started | - |
+| 9. Student Registration Backend | 2/2 | ✅ Complete | 2026-05-16 |
