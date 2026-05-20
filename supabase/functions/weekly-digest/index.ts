@@ -34,10 +34,26 @@ Deno.serve(async (req) => {
     if (attError) throw attError;
 
     // 2. Group by teacher
-    const byTeacher: Record<string, any> = {};
+    interface TeacherStats {
+      present: number;
+      absent: number;
+      late: number;
+      total: number;
+    }
+    const byTeacher: Record<string, TeacherStats> = {};
 
     for (const record of (attendance || [])) {
-      const teacher = record.courses?.teacher || 'Unknown';
+      // Supabase TS infers joined tables as arrays without DB types, but Many-to-One returns an object.
+      // Cast through unknown to avoid 'any' type restriction
+      const courseData = record.courses as unknown as { teacher: string } | { teacher: string }[] | null;
+      
+      let teacher = 'Unknown';
+      if (Array.isArray(courseData)) {
+        teacher = courseData[0]?.teacher || 'Unknown';
+      } else if (courseData) {
+        teacher = courseData.teacher || 'Unknown';
+      }
+
       if (!byTeacher[teacher]) {
         byTeacher[teacher] = { present: 0, absent: 0, late: 0, total: 0 };
       }

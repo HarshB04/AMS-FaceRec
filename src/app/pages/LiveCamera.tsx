@@ -1,8 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useSearchParams } from "react-router";
-import { Camera, Pause, Play, Download, RefreshCw, Users, CheckCircle2, Clock, XCircle, Maximize2, Settings, Power } from "lucide-react";
-import { StatusBadge } from "../components/shared/StatusBadge";
-import { getCourses, getStudentsByCourse, getTodayAttendanceForCourse, type Course, type Student } from "../lib/api";
+import React, { useState, useEffect, useCallback } from "react";
+import { FLASK_URL } from "@/app/lib/backendApi";
+import {
+  Camera, Pause, Play, Download, CheckCircle2, Clock,
+  XCircle, Power, User, AlertCircle, BookOpen, MapPin,
+} from "lucide-react";
+import { TIMETABLE_ROWS, buildTimetableSlots, type TimetableSlot } from "../lib/timetable";
+import { backendApi } from "@/app/lib/backendApi";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RecognizedStudent {
   name: string;
@@ -10,24 +15,82 @@ interface RecognizedStudent {
   time: string;
 }
 
-const FLASK_URL = "http://localhost:5000";
+interface AttendanceRecord {
+  id: string;
+  name: string;
+  sbrn: string;
+  time: string;
+  confidence: number;
+}
+
+// ─── Timetable helpers ────────────────────────────────────────────────────────
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function getCurrentSlot(): TimetableSlot | null {
+  const now = new Date();
+  const dayName = DAY_NAMES[now.getDay()];
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // Get today's name in the format used by timetable (e.g. "Monday")
+  const todaySlots = buildTimetableSlots(
+    TIMETABLE_ROWS.filter((r) => r.day.toLowerCase() === dayName.toLowerCase())
+  );
+
+  return (
+    todaySlots.find((slot) => {
+      const slotStart = slot.startHour * 60 + slot.startMin;
+      const slotEnd   = slot.startHour * 60 + slot.startMin + slot.durationMin;
+      return currentMinutes >= slotStart && currentMinutes < slotEnd;
+    }) ?? null
+  );
+}
+
+function getNextSlot(): TimetableSlot | null {
+  const now = new Date();
+  const dayName = DAY_NAMES[now.getDay()];
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const todaySlots = buildTimetableSlots(
+    TIMETABLE_ROWS.filter((r) => r.day.toLowerCase() === dayName.toLowerCase())
+  );
+
+  return (
+    todaySlots
+      .filter((slot) => slot.startHour * 60 + slot.startMin > currentMinutes)
+      .sort((a, b) => (a.startHour * 60 + a.startMin) - (b.startHour * 60 + b.startMin))[0] ?? null
+  );
+}
+
+function formatTime12(hour: number, minute: number) {
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const h = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+  return `${h}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function formatElapsed(secs: number) {
+  const m = Math.floor(secs / 60).toString().padStart(2, "0");
+  const s = (secs % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function LiveCamera() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const urlCourse = searchParams.get("course") || "";
+  const [serverOnline, setServerOnline]       = useState(false);
+  const [isStreaming, setIsStreaming]         = useState(false);
+  const [streamUrl, setStreamUrl]             = useState("");
+  const [elapsed, setElapsed]                 = useState(0);
 
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [recognized, setRecognized] = useState<RecognizedStudent[]>([]);
-  const [elapsed, setElapsed] = useState(0);
-  const [selectedCourse, setSelectedCourse] = useState(urlCourse);
-  const [serverOnline, setServerOnline] = useState(false);
-  const [streamUrl, setStreamUrl] = useState("");
-  const imgRef = useRef<HTMLImageElement>(null);
+  const [currentSlot, setCurrentSlot]         = useState<TimetableSlot | null>(null);
+  const [nextSlot, setNextSlot]               = useState<TimetableSlot | null>(null);
 
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [totalStudents, setTotalStudents] = useState(0);
+  const [recognized, setRecognized]           = useState<RecognizedStudent[]>([]);
+  const [attendanceLog, setAttendanceLog]     = useState<AttendanceRecord[]>([]);
+  const [matchedStudent, setMatchedStudent]   = useState<RecognizedStudent | null>(null);
+  const [totalStudents, setTotalStudents]     = useState(0);
 
-  // Check if Flask server is online
+  // ── Server health check ───────────────────────────────────────────────────
   useEffect(() => {
     const check = async () => {
       try {
@@ -38,256 +101,352 @@ export function LiveCamera() {
       }
     };
     check();
-    const interval = setInterval(check, 5000);
-    return () => clearInterval(interval);
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
   }, []);
 
-  // Timer
+  // ── Release camera on unmount / page leave ────────────────────────────────
   useEffect(() => {
-    if (!isStreaming) return;
-    const timer = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(timer);
-  }, [isStreaming]);
-
-  // Load courses
-  useEffect(() => {
-    getCourses().then(c => {
-      setCourses(c.filter(course => course.status === "active"));
-      if (!selectedCourse && c.length > 0) {
-        setSelectedCourse(c[0].name);
-        setSearchParams({ course: c[0].name });
-      }
-    }).catch(console.error);
+    const release = () => fetch(`${FLASK_URL}/stop`, { method: "POST", keepalive: true }).catch(() => {});
+    window.addEventListener("beforeunload", release);
+    return () => { window.removeEventListener("beforeunload", release); release(); };
   }, []);
 
-  // Update URL and fetch students when selectedCourse changes
+  // ── Auto-detect current timetable slot (refresh every minute) ────────────
   useEffect(() => {
-    if (!selectedCourse) return;
-    setSearchParams({ course: selectedCourse });
-    getStudentsByCourse(selectedCourse).then(students => {
-      setTotalStudents(students.length);
-    }).catch(console.error);
-  }, [selectedCourse, setSearchParams]);
+    const refresh = () => {
+      setCurrentSlot(getCurrentSlot());
+      setNextSlot(getNextSlot());
+    };
+    refresh();
+    const id = setInterval(refresh, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
-  // Poll recognized students from Flask and DB
+  // ── Session timer ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isStreaming) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${FLASK_URL}/recognized`);
-        const data = await res.json();
-        setRecognized(data);
-      } catch {
-        // server might be busy
-      }
-    }, 2000);
-    return () => clearInterval(interval);
+    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
   }, [isStreaming]);
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, "0");
-    const s = (secs % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  };
+  // ── Fetch total enrolled students for current slot ────────────────────────
+  useEffect(() => {
+    if (!currentSlot) return;
+    backendApi
+      .get(`/api/students?course=${encodeURIComponent(currentSlot.courseCode)}`)
+      .then((r) => r.json())
+      .then((d) => setTotalStudents(Array.isArray(d.data) ? d.data.length : 0))
+      .catch(() => setTotalStudents(0));
+  }, [currentSlot]);
 
+  // ── Poll recognized students from Flask ──────────────────────────────────
+  const pollRecognized = useCallback(async () => {
+    try {
+      const res = await fetch(`${FLASK_URL}/recognized`);
+      const data: RecognizedStudent[] = await res.json();
+
+      // Detect newly recognized student (not already in log)
+      const newStudents = data.filter(
+        (s) => !attendanceLog.some((r) => r.name === s.name)
+      );
+      if (newStudents.length > 0) {
+        const newest = newStudents[newStudents.length - 1];
+        setMatchedStudent(newest);
+        // Add to log
+        setAttendanceLog((prev) => [
+          {
+            id: `${newest.name}-${Date.now()}`,
+            name: newest.name,
+            sbrn: newest.name, // Flask returns name; SBRN would need a lookup
+            time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+            confidence: newest.confidence,
+          },
+          ...prev,
+        ]);
+        // Clear matched overlay after 3 seconds
+        setTimeout(() => setMatchedStudent(null), 3000);
+      }
+
+      setRecognized(data);
+    } catch {
+      // server may be busy; silently ignore
+    }
+  }, [attendanceLog]);
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    const id = setInterval(pollRecognized, 2000);
+    return () => clearInterval(id);
+  }, [isStreaming, pollRecognized]);
+
+  // ── Start / Stop ──────────────────────────────────────────────────────────
   const startStream = () => {
     setIsStreaming(true);
     setElapsed(0);
     setRecognized([]);
-    setStreamUrl(`${FLASK_URL}/video_feed?t=${Date.now()}`);
+    setAttendanceLog([]);
+
+    const params = new URLSearchParams({ t: String(Date.now()) });
+    if (currentSlot) {
+      params.set("course_code", currentSlot.courseCode);
+      params.set("course_name", currentSlot.courseTitle);
+      params.set("department", currentSlot.department);
+      params.set("semester", currentSlot.semester);
+    }
+    setStreamUrl(`${FLASK_URL}/video_feed?${params.toString()}`);
   };
 
   const stopStream = async () => {
     setIsStreaming(false);
-    try {
-      await fetch(`${FLASK_URL}/stop`, { method: "POST" });
-    } catch { /* */ }
+    try { await fetch(`${FLASK_URL}/stop`, { method: "POST" }); } catch { /* */ }
     setStreamUrl("");
   };
 
-  const presentCount = recognized.length;
-  const absentCount = Math.max(0, totalStudents - presentCount);
+  const presentCount = attendanceLog.length;
+  const absentCount  = Math.max(0, totalStudents - presentCount);
 
+  // ── Export attendance as CSV ──────────────────────────────────────────────
+  const exportCsv = () => {
+    const rows = [
+      ["Name", "SBRN", "Time", "Confidence%"],
+      ...attendanceLog.map((r) => [r.name, r.sbrn, r.time, `${r.confidence}`]),
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    a.download = `attendance_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      {/* Server Status Banner */}
+    <div className="space-y-5">
+
+      {/* ── Page header ── */}
+      <div>
+        <h2 className="text-[1.25rem] text-slate-900" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>
+          Live Attendance Scanner
+        </h2>
+        <p className="text-[0.8125rem] text-slate-500">
+          {currentSlot
+            ? `Now scanning: ${currentSlot.courseCode} · ${currentSlot.courseTitle}`
+            : "No class is scheduled right now."}
+        </p>
+      </div>
+
+      {/* ── Flask offline banner ── */}
       {!serverOnline && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-[0.8125rem]">
+        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-[0.8125rem]">
           <Power className="w-4 h-4 flex-shrink-0" />
-          Python Face Engine is offline. Run <code className="bg-amber-100 px-1.5 py-0.5 rounded text-[0.75rem]">python server.py</code> in the <code className="bg-amber-100 px-1.5 py-0.5 rounded text-[0.75rem]">face_engine</code> folder.
+          Python Face Engine is offline. Run{" "}
+          <code className="bg-amber-100 px-1.5 py-0.5 rounded text-[0.75rem]">python server.py</code>{" "}
+          in the <code className="bg-amber-100 px-1.5 py-0.5 rounded text-[0.75rem]">face_engine</code> folder.
         </div>
       )}
 
-      {/* Controls Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <select
-            value={selectedCourse}
-            onChange={(e) => setSelectedCourse(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[0.8125rem] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-          >
-            {courses.length === 0 ? <option value={selectedCourse}>{selectedCourse || "Select Course"}</option> : null}
-            {courses.map(c => (
-              <option key={c.id} value={c.name}>{c.code} - {c.name}</option>
-            ))}
-          </select>
+      {/* ── Current class info card ── */}
+      {currentSlot ? (
+        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+              <BookOpen className="w-5 h-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[0.9375rem] text-indigo-900 font-semibold truncate">
+                {currentSlot.courseCode} — {currentSlot.courseTitle}
+              </p>
+              <div className="flex flex-wrap gap-3 text-[0.75rem] text-indigo-600 mt-0.5">
+                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />
+                  {formatTime12(currentSlot.startHour, currentSlot.startMin)} –{" "}
+                  {formatTime12(currentSlot.endHour, currentSlot.endMin)}
+                </span>
+                {currentSlot.room && (
+                  <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{currentSlot.room}</span>
+                )}
+                {currentSlot.facultyName && (
+                  <span className="flex items-center gap-1"><User className="w-3 h-3" />{currentSlot.facultyName}</span>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            {isStreaming && <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />}
-            <span className="text-[0.8125rem] text-slate-600" style={{ fontWeight: 500 }}>
-              {isStreaming ? "Scanning" : "Stopped"} &middot; {formatTime(elapsed)}
-            </span>
+            <button
+              onClick={isStreaming ? stopStream : startStream}
+              disabled={!serverOnline}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[0.875rem] font-semibold transition-colors disabled:opacity-40 ${
+                isStreaming
+                  ? "bg-red-100 text-red-700 hover:bg-red-200"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+              }`}
+            >
+              {isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {isStreaming ? "Stop Session" : "Start Scanning"}
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={isStreaming ? stopStream : startStream}
-            disabled={!serverOnline}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[0.8125rem] transition-colors disabled:opacity-40 ${
-              isStreaming
-                ? "bg-red-50 text-red-600 hover:bg-red-100"
-                : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-            }`}
-          >
-            {isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {isStreaming ? "Stop" : "Start Scanning"}
-          </button>
-          <button className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-[0.8125rem] hover:bg-indigo-700 transition-colors">
-            <Download className="w-4 h-4" /> Export
-          </button>
+      ) : (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-[0.9375rem] text-slate-700 font-medium">No ongoing class</p>
+            <p className="text-[0.8125rem] text-slate-500 mt-0.5">
+              {nextSlot
+                ? `Next class: ${nextSlot.courseCode} at ${formatTime12(nextSlot.startHour, nextSlot.startMin)}`
+                : "No more classes scheduled for today."}
+            </p>
+          </div>
         </div>
+      )}
+
+      {/* ── Stats bar ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { icon: <User className="w-4 h-4 text-indigo-600" />, value: totalStudents, label: "Enrolled", color: "text-slate-900" },
+          { icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />, value: presentCount, label: "Present", color: "text-emerald-600" },
+          { icon: <Clock className="w-4 h-4 text-amber-500" />, value: formatElapsed(elapsed), label: "Duration", color: "text-amber-600" },
+          { icon: <XCircle className="w-4 h-4 text-red-500" />, value: absentCount, label: "Not Yet", color: "text-red-500" },
+        ].map((stat) => (
+          <div key={stat.label} className="bg-white rounded-xl border border-slate-200 p-4 text-center">
+            <div className="flex justify-center mb-1">{stat.icon}</div>
+            <p className={`text-[1.375rem] font-bold ${stat.color}`} style={{ fontFamily: "Poppins, sans-serif" }}>{stat.value}</p>
+            <p className="text-[0.75rem] text-slate-500">{stat.label}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <Users className="w-5 h-5 text-indigo-600 mx-auto mb-1" />
-          <p className="text-[1.25rem] text-slate-900" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>{totalStudents}</p>
-          <p className="text-[0.75rem] text-slate-500">Enrolled</p>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto mb-1" />
-          <p className="text-[1.25rem] text-emerald-600" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>{presentCount}</p>
-          <p className="text-[0.75rem] text-slate-500">Present</p>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <Clock className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-          <p className="text-[1.25rem] text-amber-600" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>0</p>
-          <p className="text-[0.75rem] text-slate-500">Late</p>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <XCircle className="w-5 h-5 text-red-500 mx-auto mb-1" />
-          <p className="text-[1.25rem] text-red-500" style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>{absentCount}</p>
-          <p className="text-[0.75rem] text-slate-500">Not Yet</p>
-        </div>
-      </div>
+      {/* ── Camera + Session Log ── */}
+      <div className="grid lg:grid-cols-5 gap-5">
 
-      {/* Camera + Recognized List */}
-      <div className="grid lg:grid-cols-5 gap-6">
-        {/* Camera Feed */}
+        {/* Camera feed – 3 cols */}
         <div className="lg:col-span-3">
-          <div className="bg-slate-900 rounded-2xl overflow-hidden relative aspect-video border-2 border-slate-800 shadow-2xl">
+          <div className="bg-slate-900 rounded-2xl overflow-hidden relative aspect-video border border-slate-800 shadow-xl">
             {isStreaming ? (
               <img
                 src={streamUrl}
-                alt="Live Camera Feed"
+                alt="Live camera feed"
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
                 <div className="text-center">
-                  <Camera className="w-16 h-16 text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-500 text-[0.875rem]">
-                    {serverOnline ? "Click \"Start Scanning\" to begin" : "Waiting for Python server..."}
+                  <Camera className="w-14 h-14 text-slate-600 mx-auto mb-3" />
+                  <p className="text-slate-400 text-[0.875rem]">
+                    {serverOnline
+                      ? currentSlot
+                        ? 'Click "Start Scanning" to begin'
+                        : "No class scheduled right now"
+                      : "Waiting for Python server…"}
                   </p>
-                  <p className="text-slate-600 text-[0.75rem]">Camera 1 - {selectedCourse} - Room 204</p>
                 </div>
               </div>
             )}
 
-            {/* Top controls overlay */}
-            <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-              <div className="bg-black/50 backdrop-blur-md text-white px-3 py-1.5 rounded-lg flex items-center gap-2 text-[0.75rem]">
-                {isStreaming && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
-                <span>{isStreaming ? "LIVE" : "OFFLINE"}</span>
-                <span className="text-slate-400">&middot;</span>
-                <span>{formatTime(elapsed)}</span>
+            {/* LIVE badge */}
+            {isStreaming && (
+              <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/50 backdrop-blur text-white px-3 py-1.5 rounded-lg text-[0.75rem]">
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                LIVE · {formatElapsed(elapsed)}
               </div>
-              <div className="flex gap-2">
-                <button className="bg-black/50 backdrop-blur-md text-white p-1.5 rounded-lg hover:bg-black/70" aria-label="Fullscreen">
-                  <Maximize2 className="w-4 h-4" />
-                </button>
-                <button className="bg-black/50 backdrop-blur-md text-white p-1.5 rounded-lg hover:bg-black/70" aria-label="Settings">
-                  <Settings className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            )}
 
-            {/* Bottom info bar */}
-            <div className="absolute bottom-4 inset-x-4 flex items-center justify-between z-20">
-              <span className="text-white text-[0.8125rem] bg-slate-900/60 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 font-medium">
-                {presentCount}/{totalStudents} recognized
-              </span>
-              <div className="w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-emerald-500 transition-all duration-500"
-                  style={{ width: `${totalStudents > 0 ? (presentCount/totalStudents)*100 : 0}%` }}
-                />
+            {/* Face Matched overlay — sunny-attend style */}
+            {matchedStudent && (
+              <div className="absolute inset-x-4 bottom-4 bg-emerald-500/95 backdrop-blur-sm rounded-2xl p-4 flex items-center gap-4 shadow-lg animate-bounce-once">
+                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
+                  <User className="w-7 h-7 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <span className="text-white text-[0.8125rem] font-semibold">Face Matched!</span>
+                  </div>
+                  <p className="text-white text-[1rem] font-bold truncate">{matchedStudent.name}</p>
+                  <p className="text-emerald-100 text-[0.75rem]">
+                    {matchedStudent.confidence}% confidence · Attendance marked ✓
+                  </p>
+                </div>
               </div>
-              <span className="text-white text-[0.8125rem] bg-slate-900/60 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10 font-medium">
-                {totalStudents > 0 ? Math.round((presentCount/totalStudents)*100) : 0}%
-              </span>
-            </div>
+            )}
+
+            {/* Progress bar at bottom */}
+            {isStreaming && totalStudents > 0 && (
+              <div className="absolute bottom-4 inset-x-4 flex items-center gap-3" style={{ bottom: matchedStudent ? 100 : 16 }}>
+                <span className="text-white text-[0.75rem] bg-black/50 px-2 py-1 rounded-lg backdrop-blur">
+                  {presentCount}/{totalStudents}
+                </span>
+                <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-700"
+                    style={{ width: `${Math.round((presentCount / totalStudents) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-white text-[0.75rem] bg-black/50 px-2 py-1 rounded-lg backdrop-blur">
+                  {Math.round((presentCount / totalStudents) * 100)}%
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Recognized List */}
+        {/* Session Log – 2 cols */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 flex flex-col">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[0.9375rem] text-slate-900" style={{ fontWeight: 600 }}>
-              Recognized ({recognized.length})
-            </h3>
-            <button className="text-slate-400 hover:text-slate-600 p-1" aria-label="Refresh">
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex-1 space-y-2 overflow-y-auto max-h-[400px] pr-1">
-            {recognized.length === 0 && (
-              <p className="text-slate-400 text-[0.8125rem] text-center py-8">
-                {isStreaming ? "Scanning for faces..." : "Start scanning to see recognized students"}
-              </p>
-            )}
-            {recognized.map((student, idx) => (
-              <div
-                key={student.name + idx}
-                className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-indigo-200 transition-all"
-              >
-                <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-cyan-400 rounded-full flex items-center justify-center text-white text-[0.6875rem] flex-shrink-0" style={{ fontWeight: 600 }}>
-                  {student.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[0.8125rem] text-slate-800 truncate" style={{ fontWeight: 500 }}>{student.name}</p>
-                    <StatusBadge variant="present">present</StatusBadge>
-                  </div>
-                  <div className="flex items-center gap-2 text-[0.6875rem] text-slate-400 mt-0.5">
-                    <span>{student.time}</span>
-                    <span>&middot;</span>
-                    <span className="text-emerald-500" style={{ fontWeight: 500 }}>{student.confidence}%</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+            <h3 className="text-[0.9375rem] text-slate-900 font-semibold">Session Log</h3>
+            <span className="text-[0.75rem] text-slate-400">{attendanceLog.length} marked</span>
           </div>
 
-          {/* Export options */}
-          <div className="border-t border-slate-100 pt-4 mt-4 flex gap-2">
-            <button className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-[0.8125rem] hover:bg-indigo-100 transition-colors">
-              <Download className="w-3.5 h-3.5" /> CSV
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-[0.8125rem] hover:bg-indigo-100 transition-colors">
-              <Download className="w-3.5 h-3.5" /> PDF
-            </button>
+          <div className="flex-1 space-y-2 overflow-y-auto max-h-[360px] pr-1">
+            {attendanceLog.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                <Camera className="w-10 h-10 mb-2 opacity-30" />
+                <p className="text-[0.8125rem]">No attendance marked yet</p>
+                <p className="text-[0.75rem] mt-0.5">
+                  {isStreaming ? "Scanning for faces…" : "Start the session to begin"}
+                </p>
+              </div>
+            ) : (
+              attendanceLog.map((record) => (
+                <div
+                  key={record.id}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-emerald-200 transition-all"
+                >
+                  <div className="w-9 h-9 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-[0.6875rem] font-bold flex-shrink-0">
+                    {record.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[0.8125rem] text-slate-800 font-medium truncate">{record.name}</p>
+                      <span className="text-[0.6875rem] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ml-1">
+                        Present
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[0.6875rem] text-slate-400 mt-0.5">
+                      <Clock className="w-3 h-3" />
+                      <span>{record.time}</span>
+                      <span>·</span>
+                      <span className="text-emerald-500 font-medium">{record.confidence}%</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
+
+          {/* Export */}
+          {attendanceLog.length > 0 && (
+            <div className="border-t border-slate-100 pt-4 mt-4">
+              <button
+                onClick={exportCsv}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-[0.8125rem] font-medium hover:bg-indigo-100 transition-colors"
+              >
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

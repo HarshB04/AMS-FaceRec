@@ -7,6 +7,8 @@ import { NotFound } from "./pages/PlaceholderPages";
 // Lazy-loaded pages
 const LandingPage = lazy(() => import("./pages/LandingPage").then(m => ({ default: m.LandingPage })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then(m => ({ default: m.LoginPage })));
+const RegistrationPage = lazy(() => import("./pages/RegistrationPage").then(m => ({ default: m.RegistrationPage })));
+const AdminApprovals = lazy(() => import("./pages/AdminApprovals").then(m => ({ default: m.AdminApprovals })));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
 const TeacherDashboard = lazy(() => import("./pages/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
 const StudentDashboard = lazy(() => import("./pages/StudentDashboard").then(m => ({ default: m.StudentDashboard })));
@@ -63,6 +65,7 @@ const withSuspense = (Component: React.ComponentType) => (
 export const router = createBrowserRouter([
   { path: "/", element: withSuspense(LandingPage) },
   { path: "/login", element: withSuspense(LoginPage) },
+  { path: "/register", element: withSuspense(RegistrationPage) },
   {
     path: "/admin",
     Component: AdminLayout,
@@ -74,6 +77,7 @@ export const router = createBrowserRouter([
       { path: "camera", element: withSuspense(LiveCamera) },
       { path: "reports", element: withSuspense(AttendanceReports) },
       { path: "settings", element: withSuspense(AdminSettings) },
+      { path: "approvals", element: withSuspense(AdminApprovals) },
     ],
   },
   {

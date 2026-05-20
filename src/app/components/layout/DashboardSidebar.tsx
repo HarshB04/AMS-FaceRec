@@ -2,9 +2,10 @@ import React from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
   LayoutDashboard, Users, BookOpen, Camera, FileBarChart, Settings,
-  GraduationCap, CalendarCheck, UserCircle, Clock, Sun, ChevronLeft, ChevronRight, LogOut
+  GraduationCap, CalendarCheck, UserCircle, Clock, Sun, ChevronLeft, ChevronRight, LogOut, UserCheck
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { backendGetPendingUsers } from "@/app/lib/backendApi";
 
 type Role = "admin" | "teacher" | "student";
 
@@ -22,6 +23,7 @@ const navItems: Record<Role, NavItem[]> = {
     { label: "Courses", path: "/admin/courses", icon: <BookOpen className="w-5 h-5" /> },
     { label: "Live Camera", path: "/admin/camera", icon: <Camera className="w-5 h-5" /> },
     { label: "Reports", path: "/admin/reports", icon: <FileBarChart className="w-5 h-5" /> },
+    { label: "Approvals", path: "/admin/approvals", icon: <UserCheck className="w-5 h-5" /> },
     { label: "Settings", path: "/admin/settings", icon: <Settings className="w-5 h-5" /> },
   ],
   teacher: [
@@ -49,6 +51,15 @@ export function DashboardSidebar({ role, collapsed, onToggle }: DashboardSidebar
   const location = useLocation();
   const navigate = useNavigate();
   const items = navItems[role];
+  const [pendingCount, setPendingCount] = React.useState(0);
+
+  // Fetch pending approval count for admin badge
+  React.useEffect(() => {
+    if (role !== "admin") return;
+    backendGetPendingUsers()
+      .then(({ count }) => setPendingCount(count))
+      .catch(() => { /* silently ignore — badge just won't show */ });
+  }, [role]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -79,6 +90,7 @@ export function DashboardSidebar({ role, collapsed, onToggle }: DashboardSidebar
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {items.map((item) => {
           const isActive = location.pathname === item.path;
+          const showBadge = item.path === "/admin/approvals" && pendingCount > 0;
           return (
             <Link
               key={item.path}
@@ -93,7 +105,19 @@ export function DashboardSidebar({ role, collapsed, onToggle }: DashboardSidebar
               <span className={isActive ? "text-indigo-600" : "text-slate-400"}>
                 {item.icon}
               </span>
-              {!collapsed && <span className="text-[0.875rem]">{item.label}</span>}
+              {!collapsed && (
+                <span className="flex-1 flex items-center justify-between text-[0.875rem]">
+                  {item.label}
+                  {showBadge && (
+                    <span className="ml-2 min-w-[20px] h-5 px-1.5 bg-amber-500 text-white rounded-full text-[0.6875rem] font-bold flex items-center justify-center">
+                      {pendingCount > 99 ? "99+" : pendingCount}
+                    </span>
+                  )}
+                </span>
+              )}
+              {collapsed && showBadge && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-amber-500 rounded-full" />
+              )}
             </Link>
           );
         })}

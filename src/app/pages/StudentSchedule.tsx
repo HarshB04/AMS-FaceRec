@@ -1,212 +1,341 @@
-import React, { useMemo } from "react";
-import { MapPin, User } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Layers, MapPin, User } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { getTimetableSlotsForProgram } from "../lib/api";
+import {
+  TIMETABLE_DEPARTMENTS,
+  formatSlotTime,
+  formatTime,
+  getSemestersForDepartment,
+  getUniqueCourses,
+  toTimetableSemester,
+  type TimetableSlot,
+} from "../lib/timetable";
 
-interface ClassSlot {
-  course: string;
-  name: string;
-  teacher: string;
-  room: string;
-  days: number[]; // 0=Mon … 4=Fri
-  startHour: number;
-  startMin: number;
-  durationMin: number;
-  color: string;
-}
-
-const SLOTS: ClassSlot[] = [
-  { course: "CS-301",   name: "Data Structures & Algorithms", teacher: "Dr. Smith",  room: "Room 204", days: [0, 2], startHour: 9,  startMin: 0,  durationMin: 60, color: "#4f46e5" },
-  { course: "MATH-201", name: "Calculus II",                  teacher: "Prof. Lee",   room: "Room 108", days: [0, 2, 4], startHour: 11, startMin: 0, durationMin: 50, color: "#06b6d4" },
-  { course: "ENG-101",  name: "Technical Writing",            teacher: "Ms. Carter",  room: "Room 310", days: [1, 3], startHour: 9,  startMin: 0,  durationMin: 60, color: "#10b981" },
-  { course: "PHY-102",  name: "Physics Lab",                  teacher: "Dr. Patel",   room: "Lab B",    days: [1, 3], startHour: 14, startMin: 0,  durationMin: 90, color: "#f59e0b" },
-];
-
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
-
-function fmt(h: number, m: number) {
-  const suffix = h >= 12 ? "PM" : "AM";
-  const hh = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${hh}:${m.toString().padStart(2, "0")} ${suffix}`;
-}
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DEFAULT_DEPARTMENT = "Computer Engineering";
+const DEFAULT_SEMESTER = "II";
 
 function todayDayIndex() {
-  const d = new Date().getDay(); // 0=Sun
-  return d === 0 || d === 6 ? -1 : d - 1; // Mon=0 … Fri=4
+  const day = new Date().getDay();
+  return day === 0 ? -1 : day - 1;
 }
 
-// Next 7 days of upcoming classes
-function upcomingClasses() {
+function getDateDayIndex(date: Date) {
+  const day = date.getDay();
+  return day === 0 ? -1 : day - 1;
+}
+
+function upcomingClasses(slots: TimetableSlot[]) {
   const now = new Date();
-  const results: { date: string; dayLabel: string; slot: ClassSlot }[] = [];
+  const results: { date: string; sortDate: number; slot: TimetableSlot }[] = [];
+
   for (let offset = 0; offset < 7; offset++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() + offset);
-    const day = d.getDay();
-    if (day === 0 || day === 6) continue;
-    const dayIdx = day - 1;
-    const dateStr = d.toLocaleDateString("en-GB", { weekday: "short", month: "short", day: "numeric" });
-    SLOTS.filter((s) => s.days.includes(dayIdx)).forEach((s) => {
-      results.push({ date: dateStr, dayLabel: DAYS[dayIdx], slot: s });
-    });
+    const date = new Date(now);
+    date.setDate(now.getDate() + offset);
+    const dayIdx = getDateDayIndex(date);
+    if (dayIdx < 0) continue;
+
+    const dateLabel = date.toLocaleDateString("en-GB", { weekday: "short", month: "short", day: "numeric" });
+    slots
+      .filter((slot) => slot.dayIndex === dayIdx)
+      .forEach((slot) => results.push({ date: dateLabel, sortDate: date.getTime(), slot }));
   }
-  return results.slice(0, 10);
+
+  return results
+    .sort((a, b) => {
+      if (a.sortDate !== b.sortDate) return a.sortDate - b.sortDate;
+      return a.slot.startHour * 60 + a.slot.startMin - (b.slot.startHour * 60 + b.slot.startMin);
+    })
+    .slice(0, 10);
+}
+
+function getHours(slots: TimetableSlot[]) {
+  if (slots.length === 0) return [9, 10, 11, 12, 13, 14, 15, 16];
+
+  const startHour = Math.min(...slots.map((slot) => slot.startHour), 9);
+  const endHour = Math.max(
+    ...slots.map((slot) => Math.ceil((slot.startHour * 60 + slot.startMin + slot.durationMin) / 60)),
+    17
+  );
+
+  return Array.from({ length: endHour - startHour }, (_, index) => startHour + index);
+}
+
+function getOverlap(slot: TimetableSlot, daySlots: TimetableSlot[]) {
+  const group = daySlots.filter(
+    (item) =>
+      item.startHour === slot.startHour &&
+      item.startMin === slot.startMin &&
+      item.durationMin === slot.durationMin
+  );
+
+  return {
+    lane: Math.max(0, group.findIndex((item) => item.id === slot.id)),
+    count: Math.max(1, group.length),
+  };
 }
 
 export function StudentSchedule() {
+  const [selectedDepartment, setSelectedDepartment] = useState(DEFAULT_DEPARTMENT);
+  const [selectedSemester, setSelectedSemester] = useState(DEFAULT_SEMESTER);
+  const [slots, setSlots] = useState<TimetableSlot[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+
+  const semesters = useMemo(() => getSemestersForDepartment(selectedDepartment), [selectedDepartment]);
+  const uniqueCourses = useMemo(() => getUniqueCourses(slots), [slots]);
   const todayIdx = useMemo(todayDayIndex, []);
-  const upcoming = useMemo(upcomingClasses, []);
+  const upcoming = useMemo(() => upcomingClasses(slots), [slots]);
+  const hours = useMemo(() => getHours(slots), [slots]);
 
-  // Grid pixel math
-  const gridStartHour = HOURS[0];
-  const gridEndHour   = HOURS[HOURS.length - 1] + 1;
-  const totalMinutes  = (gridEndHour - gridStartHour) * 60;
-  const gridHeightPx  = 480;
+  const gridStartHour = hours[0];
+  const gridEndHour = hours[hours.length - 1] + 1;
+  const totalMinutes = (gridEndHour - gridStartHour) * 60;
+  const gridHeightPx = 560;
 
-  function topPct(slot: ClassSlot) {
+  useEffect(() => {
+    let active = true;
+
+    setScheduleLoading(true);
+    getTimetableSlotsForProgram(selectedDepartment, selectedSemester)
+      .then((data) => {
+        if (active) setSlots(data);
+      })
+      .catch((error) => {
+        console.error("Timetable load error:", error);
+        if (active) setSlots([]);
+      })
+      .finally(() => {
+        if (active) setScheduleLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedDepartment, selectedSemester]);
+
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+
+      const metadata = data.session?.user.user_metadata ?? {};
+      const department = String(metadata.department ?? metadata.course ?? "").trim();
+      const semester = toTimetableSemester(metadata.semester);
+
+      if (department && TIMETABLE_DEPARTMENTS.includes(department)) {
+        const availableSemesters = getSemestersForDepartment(department);
+        setSelectedDepartment(department);
+        setSelectedSemester(semester && availableSemesters.includes(semester) ? semester : availableSemesters[0] ?? DEFAULT_SEMESTER);
+      } else if (semester && semesters.includes(semester)) {
+        setSelectedSemester(semester);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [semesters]);
+
+  function topPct(slot: TimetableSlot) {
     const mins = (slot.startHour - gridStartHour) * 60 + slot.startMin;
     return (mins / totalMinutes) * 100;
   }
-  function heightPct(slot: ClassSlot) {
+
+  function heightPct(slot: TimetableSlot) {
     return (slot.durationMin / totalMinutes) * 100;
+  }
+
+  function handleDepartmentChange(department: string) {
+    const nextSemesters = getSemestersForDepartment(department);
+    setSelectedDepartment(department);
+    setSelectedSemester(nextSemesters[0] ?? "");
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2
-          className="text-[1.25rem] text-slate-900"
-          style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}
-        >
-          My Schedule
-        </h2>
-        <p className="text-[0.8125rem] text-slate-500">
-          Weekly class timetable — {SLOTS.length} enrolled courses.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2
+            className="text-[1.25rem] text-slate-900"
+            style={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}
+          >
+            My Schedule
+          </h2>
+          <p className="text-[0.8125rem] text-slate-500">
+            {selectedDepartment}, Semester {selectedSemester} &mdash;{" "}
+            {scheduleLoading ? "loading timetable" : `${uniqueCourses.length} subjects and activities`}.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <label className="space-y-1">
+            <span className="block text-[0.6875rem] font-semibold uppercase tracking-wide text-slate-400">
+              Branch
+            </span>
+            <select
+              value={selectedDepartment}
+              onChange={(event) => handleDepartmentChange(event.target.value)}
+              className="h-9 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-[0.8125rem] text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20"
+            >
+              {TIMETABLE_DEPARTMENTS.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1">
+            <span className="block text-[0.6875rem] font-semibold uppercase tracking-wide text-slate-400">
+              Semester
+            </span>
+            <select
+              value={selectedSemester}
+              onChange={(event) => setSelectedSemester(event.target.value)}
+              className="h-9 min-w-[96px] rounded-lg border border-slate-200 bg-white px-3 text-[0.8125rem] text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20"
+            >
+              {semesters.map((semester) => (
+                <option key={semester} value={semester}>
+                  {semester}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
-      {/* Legend */}
       <div className="flex flex-wrap gap-3">
-        {SLOTS.map((s) => (
-          <div key={s.course} className="flex items-center gap-1.5 text-[0.75rem] font-medium text-slate-600">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-            {s.course}
+        {uniqueCourses.map((slot) => (
+          <div key={slot.courseCode} className="flex items-center gap-1.5 text-[0.75rem] font-medium text-slate-600">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slot.color }} />
+            {slot.courseCode}
           </div>
         ))}
       </div>
 
-      {/* Calendar Grid */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        {/* Header row */}
-        <div className="grid border-b border-slate-200" style={{ gridTemplateColumns: "56px repeat(5, 1fr)" }}>
-          <div className="p-2 bg-slate-50 border-r border-slate-100" />
-          {DAYS.map((day, i) => (
-            <div
-              key={day}
-              className={`py-2.5 text-center text-[0.75rem] font-semibold border-r border-slate-100 last:border-r-0 ${
-                i === todayIdx
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-50 text-slate-500"
-              }`}
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-
-        {/* Body */}
-        <div className="grid" style={{ gridTemplateColumns: "56px repeat(5, 1fr)" }}>
-          {/* Hour labels */}
-          <div className="border-r border-slate-100 relative" style={{ height: `${gridHeightPx}px` }}>
-            {HOURS.map((h) => (
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="min-w-[900px]">
+          <div
+            className="grid border-b border-slate-200"
+            style={{ gridTemplateColumns: `56px repeat(${DAYS.length}, minmax(0, 1fr))` }}
+          >
+            <div className="border-r border-slate-100 bg-slate-50 p-2" />
+            {DAYS.map((day, index) => (
               <div
-                key={h}
-                className="absolute w-full flex items-start justify-end pr-2 text-[0.625rem] text-slate-300"
-                style={{ top: `${((h - gridStartHour) / (gridEndHour - gridStartHour)) * 100}%` }}
+                key={day}
+                className={`border-r border-slate-100 py-2.5 text-center text-[0.75rem] font-semibold last:border-r-0 ${
+                  index === todayIdx ? "bg-indigo-600 text-white" : "bg-slate-50 text-slate-500"
+                }`}
               >
-                {h > 12 ? `${h - 12}PM` : `${h}AM`}
+                {day}
               </div>
             ))}
           </div>
 
-          {/* Day columns */}
-          {DAYS.map((day, dayIdx) => (
-            <div
-              key={day}
-              className={`relative border-r border-slate-100 last:border-r-0 ${
-                dayIdx === todayIdx ? "bg-indigo-50/30" : ""
-              }`}
-              style={{ height: `${gridHeightPx}px` }}
-            >
-              {/* Hour lines */}
-              {HOURS.map((h) => (
+          <div className="grid" style={{ gridTemplateColumns: `56px repeat(${DAYS.length}, minmax(0, 1fr))` }}>
+            <div className="relative border-r border-slate-100" style={{ height: `${gridHeightPx}px` }}>
+              {hours.map((hour) => (
                 <div
-                  key={h}
-                  className="absolute w-full border-t border-slate-100"
-                  style={{ top: `${((h - gridStartHour) / (gridEndHour - gridStartHour)) * 100}%` }}
-                />
-              ))}
-
-              {/* Class slots */}
-              {SLOTS.filter((s) => s.days.includes(dayIdx)).map((slot) => (
-                <div
-                  key={`${day}-${slot.course}`}
-                  className="absolute left-1 right-1 rounded-lg overflow-hidden shadow-sm border border-white/60 p-1.5 cursor-default"
-                  style={{
-                    top:    `${topPct(slot)}%`,
-                    height: `${heightPct(slot)}%`,
-                    backgroundColor: slot.color + "22",
-                    borderLeft: `3px solid ${slot.color}`,
-                  }}
-                  title={`${slot.course} — ${slot.name}\n${fmt(slot.startHour, slot.startMin)}\n${slot.room}`}
+                  key={hour}
+                  className="absolute flex w-full items-start justify-end pr-2 text-[0.625rem] text-slate-300"
+                  style={{ top: `${((hour - gridStartHour) / (gridEndHour - gridStartHour)) * 100}%` }}
                 >
-                  <p className="text-[0.6875rem] font-bold truncate" style={{ color: slot.color }}>
-                    {slot.course}
-                  </p>
-                  <p className="text-[0.625rem] text-slate-600 truncate">{slot.room}</p>
+                  {formatTime(hour, 0).replace(":00 ", "")}
                 </div>
               ))}
             </div>
-          ))}
+
+            {DAYS.map((day, dayIdx) => {
+              const daySlots = slots.filter((slot) => slot.dayIndex === dayIdx);
+
+              return (
+                <div
+                  key={day}
+                  className={`relative border-r border-slate-100 last:border-r-0 ${
+                    dayIdx === todayIdx ? "bg-indigo-50/30" : ""
+                  }`}
+                  style={{ height: `${gridHeightPx}px` }}
+                >
+                  {hours.map((hour) => (
+                    <div
+                      key={hour}
+                      className="absolute w-full border-t border-slate-100"
+                      style={{ top: `${((hour - gridStartHour) / (gridEndHour - gridStartHour)) * 100}%` }}
+                    />
+                  ))}
+
+                  {daySlots.map((slot) => {
+                    const overlap = getOverlap(slot, daySlots);
+                    const widthPct = 100 / overlap.count;
+
+                    return (
+                      <div
+                        key={slot.id}
+                        className="absolute rounded-lg border border-white/70 p-1.5 shadow-sm"
+                        style={{
+                          top: `${topPct(slot)}%`,
+                          left: `calc(${overlap.lane * widthPct}% + 0.25rem)`,
+                          width: `calc(${widthPct}% - 0.5rem)`,
+                          height: `${heightPct(slot)}%`,
+                          backgroundColor: `${slot.color}22`,
+                          borderLeft: `3px solid ${slot.color}`,
+                        }}
+                        title={`${slot.courseCode} - ${slot.courseTitle}\n${formatSlotTime(slot)}\n${slot.room || "Room not assigned"}`}
+                      >
+                        <p className="truncate text-[0.6875rem] font-bold" style={{ color: slot.color }}>
+                          {slot.courseCode}
+                        </p>
+                        <p className="truncate text-[0.625rem] text-slate-700">{slot.courseTitle}</p>
+                        <p className="truncate text-[0.625rem] text-slate-500">
+                          {slot.room || slot.batch || slot.classType || "TBA"}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Upcoming classes list */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h3 className="text-[0.9375rem] text-slate-900 font-semibold mb-4">
-          Upcoming Classes — Next 7 Days
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="mb-4 text-[0.9375rem] font-semibold text-slate-900">
+          Upcoming Classes - Next 7 Days
         </h3>
         <div className="space-y-3">
           {upcoming.length === 0 ? (
             <p className="text-[0.8125rem] text-slate-400">No upcoming classes in the next 7 days.</p>
           ) : (
-            upcoming.map((item, i) => (
+            upcoming.map((item, index) => (
               <div
-                key={`${item.date}-${item.slot.course}-${i}`}
-                className="flex items-start gap-4 p-3 rounded-xl hover:bg-slate-50 transition-colors"
+                key={`${item.date}-${item.slot.id}-${index}`}
+                className="flex items-start gap-4 rounded-xl p-3 transition-colors hover:bg-slate-50"
               >
                 <div
-                  className="w-1 self-stretch rounded-full flex-shrink-0"
+                  className="w-1 flex-shrink-0 self-stretch rounded-full"
                   style={{ backgroundColor: item.slot.color }}
                 />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <span
-                      className="text-[0.875rem] font-semibold"
-                      style={{ color: item.slot.color }}
-                    >
-                      {item.slot.course}
+                <div className="min-w-0 flex-1">
+                  <div className="mb-0.5 flex items-center justify-between gap-2">
+                    <span className="text-[0.875rem] font-semibold" style={{ color: item.slot.color }}>
+                      {item.slot.courseCode}
                     </span>
                     <span className="text-[0.75rem] text-slate-400">{item.date}</span>
                   </div>
-                  <p className="text-[0.8125rem] text-slate-700 truncate">{item.slot.name}</p>
-                  <div className="flex items-center gap-3 mt-1 text-[0.75rem] text-slate-400">
-                    <span>{fmt(item.slot.startHour, item.slot.startMin)}</span>
+                  <p className="truncate text-[0.8125rem] text-slate-700">{item.slot.courseTitle}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-3 text-[0.75rem] text-slate-400">
+                    <span>{formatSlotTime(item.slot)}</span>
                     <span className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3" /> {item.slot.room}
+                      <MapPin className="h-3 w-3" /> {item.slot.room || "TBA"}
                     </span>
                     <span className="flex items-center gap-1">
-                      <User className="w-3 h-3" /> {item.slot.teacher}
+                      <User className="h-3 w-3" /> {item.slot.facultyName || "Faculty TBA"}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Layers className="h-3 w-3" /> {item.slot.batch || item.slot.classType || "Class"}
                     </span>
                   </div>
                 </div>

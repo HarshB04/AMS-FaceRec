@@ -2,9 +2,36 @@ node_modules/
 dist/
 .env
 .env.*
+!.env.example
+!backend/.env.example
+backend/.env
+backend/node_modules/
 .venv/
 venv/
 __pycache__/
+.pytest_cache/
 face_engine/data/
 *.npy
 *.pkl
+
+# Logs & runtime files
+*.log
+*.pid
+.jetro/daemon/
+
+# Test & diagnostic scripts (not for production)
+face_engine/test_*.py
+face_engine/test_frame.jpg
+face_engine/server.log
+face_engine/stop_cam.py
+face_engine/TESTING.md
+
+# Scratch / diagnostic scripts
+backend/check_users.js
+test_cam_access.py
+
+# Reference repo (local only)
+_reference_repo/
+
+# Build artifacts
+dist/

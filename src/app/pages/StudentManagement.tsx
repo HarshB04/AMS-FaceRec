@@ -3,12 +3,14 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Search, Plus, Filter, Camera, Edit, Trash2,
   ChevronLeft, ChevronRight, Upload, Loader2, AlertCircle,
+  CheckCircle2, X, Wifi, WifiOff,
 } from "lucide-react";
 import { StatusBadge } from "../components/shared/StatusBadge";
 import {
   getStudents, createStudent, updateStudent, deleteStudent,
   type Student,
 } from "../lib/api";
+import { backendFaceEnrollComplete, FLASK_URL } from "@/app/lib/backendApi";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -132,48 +134,77 @@ export function StudentManagement() {
     }
   };
 
-  // ── face enroll toggle ───────────────────────────────
-  const toggleFace = async (s: Student) => {
+  // ── face enroll modal state ─────────────────────────
+  const [faceModalStudent, setFaceModalStudent] = useState<Student | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
+  const [enrollCount, setEnrollCount] = useState(0);
+  const [enrollDone, setEnrollDone] = useState(false);
+  const [enrollError, setEnrollError] = useState("");
+  const [flaskOnline, setFlaskOnline] = useState<boolean | null>(null);
+  const enrollPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const openFaceModal = async (s: Student) => {
+    setFaceModalStudent(s);
+    setEnrolling(false);
+    setEnrollCount(0);
+    setEnrollDone(false);
+    setEnrollError("");
+
+    // Ping Flask
     try {
-      await updateStudent(s.id, { faceEnrolled: !s.faceEnrolled });
-      await fetchStudents();
-    } catch (err) {
-      console.error("Face enroll error:", err);
+      const r = await fetch(`${FLASK_URL}/`, { signal: AbortSignal.timeout(2000) });
+      setFlaskOnline(r.ok);
+    } catch {
+      setFlaskOnline(false);
     }
   };
 
-  const [enrolling, setEnrolling] = useState(false);
-  const [enrollStream, setEnrollStream] = useState("");
+  const closeFaceModal = () => {
+    if (enrollPollRef.current) clearInterval(enrollPollRef.current);
+    setFaceModalStudent(null);
+    setEnrolling(false);
+    setEnrollCount(0);
+    setEnrollDone(false);
+    setEnrollError("");
+    // Stop the Flask stream
+    fetch(`${FLASK_URL}/stop`, { method: "POST" }).catch(() => {});
+  };
 
-  const handleFlaskEnroll = async () => {
-    if (!form.studentId && !form.firstName) {
-        alert("Please enter a SBRN or First Name first!");
-        return;
-    }
-
-    try {
-      await fetch("http://localhost:5000/");
-    } catch (err) {
-      alert("Python Face Engine is not running. Please start the server on port 5000.");
-      return;
-    }
-
-    const targetId = form.studentId || form.firstName;
+  const startEnrollment = (sbrn: string) => {
     setEnrolling(true);
-    setEnrollStream(`http://localhost:5000/enroll_feed?name=${encodeURIComponent(targetId)}&t=${Date.now()}`);
+    setEnrollError("");
+    setEnrollCount(0);
 
-    const poll = setInterval(async () => {
+    // Poll Flask /enroll_status every 500ms
+    enrollPollRef.current = setInterval(async () => {
       try {
-        const res = await fetch("http://localhost:5000/enroll_status");
-        const data = await res.json();
+        const r = await fetch(`${FLASK_URL}/enroll_status`);
+        const data: { count: number; active: boolean } = await r.json();
+        setEnrollCount(data.count);
+
         if (!data.active && data.count >= 100) {
-          clearInterval(poll);
-          setEnrolling(false);
-          setEnrollStream("");
-          setForm({ ...form, faceEnrolled: true });
+          clearInterval(enrollPollRef.current!);
+          // Notify Express backend to persist face_enrolled = true
+          try {
+            await backendFaceEnrollComplete(sbrn);
+            setEnrollDone(true);
+            setEnrolling(false);
+            // Update local student list
+            setStudents((prev) =>
+              prev.map((st) =>
+                st.studentId === sbrn ? { ...st, faceEnrolled: true } : st
+              )
+            );
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Unknown error";
+            setEnrollError(`Backend error: ${msg}`);
+            setEnrolling(false);
+          }
         }
-      } catch { /* server busy */ }
-    }, 1000);
+      } catch {
+        /* Flask temporarily busy — ignore */
+      }
+    }, 500);
   };
 
   return (
@@ -285,8 +316,12 @@ export function StudentManagement() {
                             <Camera className="w-3.5 h-3.5" /> Enrolled
                           </span>
                         ) : (
-                          <button onClick={() => toggleFace(student)} className="flex items-center gap-1.5 text-sm text-amber-600 hover:text-amber-700">
-                            <Upload className="w-3.5 h-3.5" /> Capture
+                          <button
+                            onClick={() => openFaceModal(student)}
+                            className="flex items-center gap-1.5 text-sm text-amber-600 hover:text-amber-700 hover:underline"
+                            title={`Capture face for ${student.name}`}
+                          >
+                            <Upload className="w-3.5 h-3.5" /> Capture Face
                           </button>
                         )}
                       </TableCell>
@@ -306,6 +341,17 @@ export function StudentManagement() {
                       </TableCell>
                       <TableCell className="flex-1 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {!student.faceEnrolled && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openFaceModal(student)}
+                              className="text-slate-400 hover:text-amber-600"
+                              title="Capture face data"
+                            >
+                              <Camera className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" onClick={() => openEdit(student)} className="text-slate-400 hover:text-blue-600">
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -355,6 +401,12 @@ export function StudentManagement() {
               <Label>SBRN</Label>
               <Input value={form.studentId} onChange={e => setForm({...form, studentId: e.target.value})} placeholder="SBRN-001" />
             </div>
+            {!editStudent && (
+              <div className="space-y-2">
+                <Label>Login Password</Label>
+                <input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Set initial password" className="w-full border rounded-md px-3 py-2 text-sm" />
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Course</Label>
               <Select value={form.course} onValueChange={val => setForm({...form, course: val})}>
@@ -366,33 +418,7 @@ export function StudentManagement() {
                 </SelectContent>
               </Select>
             </div>
-            {!editStudent && (
-              <div className="space-y-2">
-                <Label>Login Password</Label>
-                <Input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Set initial password" />
-              </div>
-            )}
-            {!editStudent && (
-              <div className="space-y-2">
-                <Label>Face Enrollment</Label>
-                {enrolling && enrollStream ? (
-                  <div className="border-2 border-orange-300 rounded-xl overflow-hidden bg-black">
-                    <img src={enrollStream} alt="Enrolling..." className="w-full aspect-video object-cover" />
-                    <p className="text-center text-orange-500 text-[0.75rem] py-2 animate-pulse">Capturing face data... Look at the camera</p>
-                  </div>
-                ) : (
-                  <div 
-                    onClick={handleFlaskEnroll}
-                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${form.faceEnrolled ? "border-emerald-400 bg-emerald-50" : "border-slate-200 hover:border-blue-300"}`}
-                  >
-                    <Camera className={`w-8 h-8 mx-auto mb-2 ${form.faceEnrolled ? "text-emerald-500" : "text-slate-400"}`} />
-                    <p className={`text-sm font-medium ${form.faceEnrolled ? "text-emerald-700" : "text-slate-600"}`}>
-                      {form.faceEnrolled ? "Face Data Captured! ✓" : "Capture Face Data"}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
+
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeModal}>Cancel</Button>
@@ -404,6 +430,105 @@ export function StudentManagement() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Face Enrollment Modal ─────────────────────────────────────────── */}
+      <Dialog open={!!faceModalStudent} onOpenChange={(open) => !open && closeFaceModal()}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="w-5 h-5 text-amber-500" />
+              Face Enrollment
+              {faceModalStudent && (
+                <span className="font-mono text-sm bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">
+                  {faceModalStudent.studentId}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {faceModalStudent?.name} — Capture 100 frames to complete enrollment.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Flask status */}
+            {flaskOnline === false && (
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                <WifiOff className="w-4 h-4 flex-shrink-0" />
+                Python Face Engine is <strong>offline</strong>. Start it with{" "}
+                <code className="bg-red-100 px-1 rounded">python face_engine/server.py</code>
+              </div>
+            )}
+            {flaskOnline === true && !enrolling && !enrollDone && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">
+                <Wifi className="w-4 h-4" /> Face Engine is online and ready.
+              </div>
+            )}
+
+            {/* Error */}
+            {enrollError && (
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                <AlertCircle className="w-4 h-4" /> {enrollError}
+              </div>
+            )}
+
+            {/* Video stream */}
+            {faceModalStudent && (enrolling || enrollDone) && (
+              <div className="rounded-xl overflow-hidden border border-slate-200 bg-black aspect-video relative">
+                {!enrollDone && (
+                  <img
+                    src={`${FLASK_URL}/enroll_feed?name=${encodeURIComponent(faceModalStudent.studentId)}&t=${Date.now()}`}
+                    alt="Face capture stream"
+                    className="w-full h-full object-cover"
+                  />
+                )}
+                {enrollDone && (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-950 text-emerald-300">
+                    <CheckCircle2 className="w-16 h-16 mb-3" />
+                    <p className="text-lg font-semibold">Enrollment Complete!</p>
+                    <p className="text-sm opacity-75">Face data saved for {faceModalStudent.name}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Progress bar */}
+            {enrolling && !enrollDone && (
+              <div>
+                <div className="flex justify-between text-xs text-slate-500 mb-1">
+                  <span>Frames captured</span>
+                  <span className="font-mono">{enrollCount} / 100</span>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500 rounded-full transition-all duration-200"
+                    style={{ width: `${Math.min(100, enrollCount)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeFaceModal}>
+              {enrollDone ? <><X className="w-4 h-4 mr-1" /> Close</> : "Cancel"}
+            </Button>
+            {!enrollDone && faceModalStudent && (
+              <Button
+                onClick={() => startEnrollment(faceModalStudent.studentId)}
+                disabled={enrolling || flaskOnline === false}
+                className="bg-amber-500 hover:bg-amber-600 text-white"
+              >
+                {enrolling ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Capturing…</>
+                ) : (
+                  <><Camera className="w-4 h-4 mr-2" /> Start Capture</>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
       <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
         <DialogContent>
           <DialogHeader>
@@ -421,3 +546,4 @@ export function StudentManagement() {
     </div>
   );
 }
+

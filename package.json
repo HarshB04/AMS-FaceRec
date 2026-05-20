@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "db:import-timetable": "node scripts/import-timetable-to-supabase.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

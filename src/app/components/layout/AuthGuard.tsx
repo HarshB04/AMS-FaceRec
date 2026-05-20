@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { supabase } from "@/lib/supabase";
+import { backendGetMe } from "@/app/lib/backendApi";
 import { Loader2 } from "lucide-react";
 
 interface AuthGuardProps {
@@ -8,6 +9,12 @@ interface AuthGuardProps {
   children: React.ReactNode;
 }
 
+/**
+ * AuthGuard — protects routes by verifying the user's role.
+ *
+ * SECURITY: Role is read from the `profiles` table via the backend API (/api/auth/me).
+ * This prevents privilege escalation via spoofed JWT user_metadata.
+ */
 export function AuthGuard({ role, children }: AuthGuardProps) {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -19,44 +26,54 @@ export function AuthGuard({ role, children }: AuthGuardProps) {
 
     async function checkAuth() {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error || !session) {
-          if (mounted) {
-            setAuthorized(false);
-            setLoading(false);
-          }
+        // Step 1: Verify there is an active Supabase session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError || !session) {
+          if (mounted) { setAuthorized(false); setLoading(false); }
           return;
         }
 
-        // Get user role from metadata
-        const userRole = session.user.user_metadata?.role || "student"; // Default to student if not set
+        // Step 2: Fetch authoritative role from backend (reads profiles table, NOT JWT metadata)
+        let userRole: string;
+        try {
+          const { user } = await backendGetMe();
+          userRole = user.role;
+        } catch (backendErr) {
+          // Backend unreachable (e.g. not started) — fall back to supabase profiles table directly
+          console.warn("[AuthGuard] Backend unavailable, falling back to Supabase profiles table.");
+          const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", session.user.id)
+            .single();
+
+          if (profileError || !profile) {
+            if (mounted) { setAuthorized(false); setLoading(false); }
+            return;
+          }
+          userRole = profile.role;
+        }
 
         if (userRole !== role) {
-          // If logged in but wrong role, redirect them to their correct dashboard
-          navigate(`/${userRole}`, { replace: true });
+          // Wrong role — redirect to the user's correct dashboard
+          if (mounted) navigate(`/${userRole}`, { replace: true });
         } else {
-          if (mounted) {
-            setAuthorized(true);
-          }
+          if (mounted) setAuthorized(true);
         }
       } catch (err) {
-        console.error("Auth check failed:", err);
-        if (mounted) {
-          setAuthorized(false);
-        }
+        console.error("[AuthGuard] Auth check failed:", err);
+        if (mounted) setAuthorized(false);
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     }
 
     checkAuth();
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
+    // Re-validate on auth state changes (sign out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session || event === "SIGNED_OUT") {
         if (mounted) {
           setAuthorized(false);
           navigate("/login", { replace: true, state: { from: location } });
@@ -68,7 +85,7 @@ export function AuthGuard({ role, children }: AuthGuardProps) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [role, location, navigate]);
+  }, [role, location.pathname, navigate]);
 
   if (loading) {
     return (

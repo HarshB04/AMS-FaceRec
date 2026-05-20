@@ -9,6 +9,7 @@ import {
   getStudents, updateStudent,
   type Course, type Student
 } from "../lib/api";
+import { isTimetableCourseId } from "../lib/timetable";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -78,6 +79,7 @@ export function AdminCourses() {
   };
 
   const openEdit = (c: Course) => {
+    if (c.source === "timetable" || isTimetableCourseId(c.id)) return;
     setEditCourse(c);
     setForm({ code: c.code, name: c.name, teacher: c.teacher, schedule: c.schedule, room: c.room, students: c.students, status: c.status });
     setShowModal(true);
@@ -164,8 +166,8 @@ export function AdminCourses() {
             {loading ? "Loading…" : `${courses.length} courses registered`}
           </p>
         </div>
-        <Button onClick={openAdd} className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4 mr-2" /> Add Course
+        <Button disabled variant="outline" title="Courses are generated from timetable_entries.">
+          <Plus className="w-4 h-4 mr-2" /> Timetable Source
         </Button>
       </div>
 
@@ -227,10 +229,13 @@ export function AdminCourses() {
               {paginated.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-12 text-sm text-slate-400">
-                    No records found. Click 'Add Course' to get started.
+                    No timetable courses found. Import timetable entries to populate this view.
                   </TableCell>
                 </TableRow>
-              ) : paginated.map((course) => (
+              ) : paginated.map((course) => {
+                const importedCourse = course.source === "timetable" || isTimetableCourseId(course.id);
+
+                return (
                 <TableRow key={course.id}>
                   <TableCell>
                     <div>
@@ -257,7 +262,13 @@ export function AdminCourses() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <StatusBadge variant={course.status} dot>{course.status}</StatusBadge>
+                    {importedCourse ? (
+                      <span className="inline-flex items-center rounded-full bg-cyan-50 px-2 py-0.5 text-xs font-medium text-cyan-700">
+                        Imported
+                      </span>
+                    ) : (
+                      <StatusBadge variant={course.status} dot>{course.status}</StatusBadge>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -265,16 +276,21 @@ export function AdminCourses() {
                         <UserPlus className="w-3.5 h-3.5 mr-1.5" />
                         Enroll
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(course)} className="text-slate-400 hover:text-blue-600 h-8 w-8">
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(course.id)} className="text-slate-400 hover:text-red-600 h-8 w-8">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {!importedCourse && (
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(course)} className="text-slate-400 hover:text-blue-600 h-8 w-8">
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteConfirm(course.id)} className="text-slate-400 hover:text-red-600 h-8 w-8">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}

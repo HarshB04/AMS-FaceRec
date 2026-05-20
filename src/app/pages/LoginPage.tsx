@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Sun, Eye, EyeOff, ArrowRight, ShieldCheck, GraduationCap, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { backendAdminLogin, backendTeacherLogin, backendStudentLogin } from "@/app/lib/backendApi";
 
 const demoCredentials = {
-  admin: { email: "admin@sunnyattend.com", password: "admin123" },
-  teacher: { email: "dr.smith@sunnyattend.com", password: "teacher123" },
-  student: { email: "STU-001", password: "password" },
+  admin:   { email: "admin@abvgiet.ac.in",              password: "Admin@Password2024" },
+  teacher: { email: "dr.smith@sunnyattend.com",         password: "Teacher@AMS2024" },
+  student: { email: "2024CE001",                        password: "Student@AMS2024" },
 };
 
 const roleIcons = {
@@ -42,40 +43,47 @@ export function LoginPage() {
     }
 
     setLoading(true);
-    
+
     try {
       let authEmail = email;
 
       if (role === "student") {
-        // Look up email by SBRN
-        const res = await fetch("https://lngcsgcqtwdgyrvmykhy.supabase.co/functions/v1/server/lookup-sbrn", {
+        // Resolve SBRN → email via the backend (keeps Edge Function calls server-side)
+        const BACKEND = (import.meta.env.VITE_BACKEND_URL as string) || "http://localhost:5000";
+        const res = await fetch(`${BACKEND}/api/auth/lookup-sbrn`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sbrn: email }), // email state holds SBRN for students
+          body: JSON.stringify({ sbrn: email.trim().toUpperCase() }),
         });
-        
-        if (!res.ok) {
-          throw new Error("Student ID (SBRN) not found.");
-        }
         const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Student ID (SBRN) not found.");
         authEmail = data.email;
       }
 
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: authEmail,
-        password,
+      // Use the secure backend endpoints — role is verified server-side from profiles table
+      let backendResponse;
+      if (role === "admin") {
+        backendResponse = await backendAdminLogin(authEmail, password);
+      } else if (role === "teacher") {
+        backendResponse = await backendTeacherLogin(authEmail, password);
+      } else {
+        backendResponse = await backendStudentLogin(authEmail, password);
+      }
+
+      // Set the session in the Supabase client so the rest of the app works normally
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: backendResponse.session.access_token,
+        refresh_token: backendResponse.session.refresh_token,
       });
 
-      if (authError) throw authError;
+      if (sessionError) throw sessionError;
 
-      if (data.session) {
-        // Assume role is stored in user metadata, if not default to student
-        const userRole = data.session.user.user_metadata?.role || role;
-        navigate(`/${userRole}`);
-      }
-    } catch (err: any) {
+      // Navigate to the authoritative role's dashboard
+      navigate(`/${backendResponse.user.role}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to sign in. Please check your credentials.";
       console.error("Login error:", err);
-      setError(err.message || "Failed to sign in. Please check your credentials.");
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -197,7 +205,7 @@ export function LoginPage() {
                 type={role === "student" ? "text" : "email"}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={role === "student" ? "e.g. STU-001" : `${role}@sunnyattend.com`}
+                placeholder={role === "student" ? "e.g. 2024CE001" : `${role}@abvgiet.ac.in`}
                 className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[0.875rem] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition"
               />
             </div>
@@ -258,7 +266,7 @@ export function LoginPage() {
 
           <p className="text-center text-[0.8125rem] text-slate-500 mt-8">
             Don't have an account?{" "}
-            <a href="#" className="text-blue-600 hover:text-blue-700" style={{ fontWeight: 500 }}>Contact your admin</a>
+            <Link to="/register" className="text-blue-600 hover:text-blue-700" style={{ fontWeight: 500 }}>Create an account</Link>
           </p>
         </div>
       </div>

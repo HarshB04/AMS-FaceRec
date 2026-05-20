@@ -4,3 +4,4 @@ scikit-learn
 requests
 flask
 flask-cors
+pytest>=8.0

@@ -1,0 +1,375 @@
+# Database Restructure Plan — Base + Extension Tables
+
+> **Status:** Planning (not yet approved for implementation)  
+> **Target Phase:** 5 or 6 (after current feature work is stable)  
+> **Risk Level:** High — touches every layer of the stack  
+
+---
+
+## Problem Statement
+
+The current schema has user data scattered across **4 tables** (`auth.users`, `profiles`, `students`, `instructors`) with duplicated columns (`email`, `name`, `branch`, `department`), no formal relationships between them, and a painful "linking" problem where seed scripts must stitch auth accounts to profile rows to domain rows manually.
+
+## Design Philosophy
+
+**One base table for identity. Extension tables for role-specific data.**
+
+Every person in the system — admin, teacher, or student — is first and foremost a **user**. What differs between them is the *extra data* their role requires. A student has a semester and SBRN. A teacher has a faculty code and designation. An admin has permission scopes. The base table captures what's universal; extension tables capture what's role-specific.
+
+---
+
+## Proposed Schema
+
+### Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    AUTH_USERS ||--|| USERS : "1:1 (id = auth.uid)"
+    USERS ||--o| STUDENT_DETAILS : "if role = student"
+    USERS ||--o| TEACHER_DETAILS : "if role = teacher"
+    USERS ||--o| ADMIN_DETAILS : "if role = admin"
+    USERS ||--o{ FACE_EMBEDDINGS : "has"
+    USERS ||--o{ ACTIVITY_LOGS : "generates"
+    USERS ||--o{ ENROLLMENTS : "participates in"
+    COURSES ||--o{ ENROLLMENTS : "has"
+    USERS ||--o{ ATTENDANCE : "marked in"
+    COURSES ||--o{ ATTENDANCE : "tracked by"
+    COURSES ||--o{ TIMETABLE_ENTRIES : "scheduled as"
+```
+
+---
+
+### Table Definitions
+
+#### 1. `users` (base table — replaces `profiles` + `students` + `instructors`)
+
+This is the **single source of truth** for every person in the system. It maps 1:1 to `auth.users` via the UUID primary key.
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `UUID` | PK, FK → `auth.users(id)` ON DELETE CASCADE | Supabase Auth UUID |
+| `role` | `user_role` ENUM | NOT NULL, `('admin','teacher','student')` | Authoritative role |
+| `email` | `TEXT` | NOT NULL, UNIQUE | Login email |
+| `full_name` | `TEXT` | NOT NULL | Display name |
+| `phone` | `TEXT` | | Optional contact |
+| `avatar_url` | `TEXT` | | Profile photo URL (Supabase Storage) |
+| `branch` | `TEXT` | | Engineering branch |
+| `approval_status` | `TEXT` | NOT NULL DEFAULT `'approved'`, CHECK `('pending','approved','rejected')` | Gates login |
+| `is_active` | `BOOLEAN` | NOT NULL DEFAULT `true` | Soft-delete flag |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT `NOW()` | |
+| `updated_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT `NOW()` | Auto-updated via trigger |
+
+**Key decisions:**
+- `branch` is on the base table because teachers also belong to a branch/department
+- `role` remains an ENUM for type safety and fast filtering
+- `approval_status` replaces the old two-place check (profiles + students.status)
+- No more duplicate `name`/`email` across tables
+
+---
+
+#### 2. `student_details` (extension for students only)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `user_id` | `UUID` | PK, FK → `users(id)` ON DELETE CASCADE | 1:1 with users |
+| `sbrn` | `TEXT` | NOT NULL, UNIQUE | Student Board Roll Number (e.g. `2024CE001`) |
+| `semester` | `INTEGER` | NOT NULL, CHECK `(1-6)` | Current semester |
+| `session` | `TEXT` | NOT NULL | Academic session (e.g. `2024 - 2027`) |
+| `section` | `TEXT` | | Section/division if applicable |
+| `registration_date` | `DATE` | DEFAULT `CURRENT_DATE` | When student registered |
+| `attendance_rate` | `NUMERIC(5,2)` | DEFAULT `0.00` | Cached overall % |
+
+**Why separate?** An admin or teacher row should never have `sbrn` or `semester` columns. This keeps the schema honest — if a row exists in `student_details`, that user IS a student, enforced by structure, not just a column value.
+
+---
+
+#### 3. `teacher_details` (extension for teachers only)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `user_id` | `UUID` | PK, FK → `users(id)` ON DELETE CASCADE | 1:1 with users |
+| `faculty_code` | `TEXT` | UNIQUE | e.g. `FAC-CS-001` |
+| `designation` | `TEXT` | | Professor / Asst. Professor / HOD |
+| `specialization` | `TEXT` | | Area of expertise |
+| `joining_date` | `DATE` | | |
+
+---
+
+#### 4. `admin_details` (extension for admins only)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `user_id` | `UUID` | PK, FK → `users(id)` ON DELETE CASCADE | 1:1 with users |
+| `permission_scope` | `TEXT` | DEFAULT `'full'` | `'full'`, `'readonly'`, `'department'` |
+| `managed_branches` | `TEXT[]` | | Which branches this admin manages (for department-scoped admins) |
+
+> [!NOTE]
+> `admin_details` is thin right now. It exists for forward-compatibility — when you add multi-admin support with scoped permissions, the table is ready.
+
+---
+
+#### 5. `face_embeddings` (replaces filesystem `.npy`/`.pkl`)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `BIGINT` | PK, GENERATED | Auto-increment |
+| `user_id` | `UUID` | FK → `users(id)`, NOT NULL | Who this face belongs to |
+| `embedding` | `FLOAT8[]` | NOT NULL | 128-dim feature vector from face model |
+| `sample_count` | `INTEGER` | DEFAULT `0` | How many frames were used |
+| `model_version` | `TEXT` | DEFAULT `'haar_knn_v1'` | Which model generated this |
+| `enrolled_at` | `TIMESTAMPTZ` | DEFAULT `NOW()` | |
+| `is_active` | `BOOLEAN` | DEFAULT `true` | Can soft-delete old enrollments |
+
+**Runtime usage:** The Python face engine loads all active embeddings into a numpy array on startup, exactly like today. The DB is the durable store; memory is the runtime cache. On enrollment, write to DB → reload cache.
+
+> [!IMPORTANT]
+> The face engine currently uses `.npy` + `.pkl` files. Migration requires a one-time script to extract existing embeddings and INSERT them into this table, then update `server.py` to read from DB on startup.
+
+---
+
+#### 6. `courses` (mostly unchanged)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `BIGINT` | PK, GENERATED | |
+| `course_code` | `TEXT` | NOT NULL, UNIQUE | e.g. `CS-301` |
+| `course_name` | `TEXT` | NOT NULL | |
+| `branch` | `TEXT` | NOT NULL | Which branch offers this |
+| `semester` | `INTEGER` | NOT NULL | Which semester |
+| `credits` | `INTEGER` | | |
+| `status` | `TEXT` | DEFAULT `'active'` | |
+| `created_at` | `TIMESTAMPTZ` | DEFAULT `NOW()` | |
+
+---
+
+#### 7. `enrollments` (replaces `course_instructors` + implicit student-course link)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `BIGINT` | PK, GENERATED | |
+| `user_id` | `UUID` | FK → `users(id)`, NOT NULL | Student OR teacher |
+| `course_id` | `BIGINT` | FK → `courses(id)`, NOT NULL | |
+| `role_in_course` | `TEXT` | NOT NULL, CHECK `('student','instructor')` | Distinguishes students from teachers in the same table |
+| `enrolled_at` | `TIMESTAMPTZ` | DEFAULT `NOW()` | |
+| UNIQUE | | `(user_id, course_id)` | One enrollment per user per course |
+
+**Why this is better:** Currently there's no explicit student↔course relationship — attendance records implicitly create it. With `enrollments`, you can:
+- Show "My Courses" for both students and teachers
+- Know class size before any attendance is taken
+- Remove a student from a course without deleting their attendance history
+
+---
+
+#### 8. `attendance` (streamlined)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `BIGINT` | PK, GENERATED | |
+| `user_id` | `UUID` | FK → `users(id)`, NOT NULL | The student |
+| `course_id` | `BIGINT` | FK → `courses(id)`, NOT NULL | |
+| `date_attended` | `DATE` | NOT NULL, DEFAULT `CURRENT_DATE` | |
+| `status` | `TEXT` | NOT NULL, DEFAULT `'absent'`, CHECK `('present','absent','late')` | |
+| `marked_by` | `UUID` | FK → `users(id)` | Teacher or face engine user who marked it |
+| `source` | `TEXT` | DEFAULT `'manual'`, CHECK `('face_recognition','manual','bulk_import')` | How was this record created |
+| `confidence` | `NUMERIC(5,2)` | | Face recognition confidence % (NULL if manual) |
+| `marked_at` | `TIMESTAMPTZ` | DEFAULT `NOW()` | Exact time of marking |
+| UNIQUE | | `(user_id, course_id, date_attended)` | Prevent duplicates |
+
+**New columns explained:**
+- `marked_by` — accountability. Was it auto-marked by the face engine or manually by a teacher?
+- `source` — distinguishes face-scanned vs manual vs bulk-imported attendance
+- `confidence` — the face recognition confidence score, useful for audit
+
+---
+
+#### 9. `timetable_entries` (mostly unchanged)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `BIGINT` | PK, GENERATED | |
+| `course_id` | `BIGINT` | FK → `courses(id)` | Links to course |
+| `branch` | `TEXT` | NOT NULL | |
+| `semester` | `INTEGER` | NOT NULL | |
+| `day_of_week` | `TEXT` | NOT NULL, CHECK days | |
+| `start_time` | `TIME` | NOT NULL | |
+| `end_time` | `TIME` | NOT NULL | |
+| `room` | `TEXT` | | Room/Lab |
+| `teacher_id` | `UUID` | FK → `users(id)` | Who teaches this slot |
+| `batch_group` | `TEXT` | | For lab batches |
+
+---
+
+#### 10. `activity_logs` (new)
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `BIGINT` | PK, GENERATED | |
+| `user_id` | `UUID` | FK → `users(id)` | Who performed the action |
+| `action` | `TEXT` | NOT NULL | e.g. `'login'`, `'mark_attendance'`, `'approve_student'`, `'enroll_face'` |
+| `entity_type` | `TEXT` | | What was acted on: `'student'`, `'course'`, `'attendance'` |
+| `entity_id` | `TEXT` | | ID of the entity |
+| `details` | `JSONB` | | Arbitrary metadata |
+| `ip_address` | `TEXT` | | |
+| `created_at` | `TIMESTAMPTZ` | DEFAULT `NOW()` | |
+
+**Index:** `CREATE INDEX idx_logs_user_time ON activity_logs(user_id, created_at DESC);`
+
+---
+
+## How Tables Interconnect
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        auth.users (Supabase)                     │
+│                    Handles: passwords, JWT, sessions             │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │ UUID (1:1)
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                          users (base)                             │
+│    id · role · email · full_name · branch · approval_status       │
+├──────────┬───────────────┬───────────────┬───────────────────────┤
+│          │               │               │                       │
+│    ┌─────▼─────┐   ┌─────▼──────┐  ┌─────▼──────┐              │
+│    │ student_   │   │ teacher_   │  │ admin_     │   Extension  │
+│    │ details    │   │ details    │  │ details    │   Tables     │
+│    │ sbrn       │   │ faculty_   │  │ permission │              │
+│    │ semester   │   │ code       │  │ _scope     │              │
+│    │ session    │   │ designation│  │ managed_   │              │
+│    │ att_rate   │   │ spec.      │  │ branches   │              │
+│    └────────────┘   └────────────┘  └────────────┘              │
+│          │                                                       │
+│    ┌─────▼────────────┐                                          │
+│    │ face_embeddings   │                                          │
+│    │ embedding[]       │                                          │
+│    │ model_version     │                                          │
+│    └──────────────────┘                                          │
+└──────┬───────────────────────┬───────────────────────────────────┘
+       │                       │
+       ▼                       ▼
+┌──────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ enrollments  │────▶│    courses       │◀────│ timetable_      │
+│ user_id      │     │ code · name      │     │ entries          │
+│ course_id    │     │ branch · semester │     │ day · time       │
+│ role_in_     │     └────────┬─────────┘     │ room · teacher   │
+│ course       │              │               └─────────────────┘
+└──────┬───────┘              │
+       │              ┌───────▼────────┐
+       └─────────────▶│  attendance    │
+                      │ user_id        │
+                      │ course_id      │
+                      │ date · status  │
+                      │ source · conf. │
+                      └────────────────┘
+
+                      ┌────────────────┐
+                      │ activity_logs  │
+                      │ user_id        │
+                      │ action · JSONB │
+                      └────────────────┘
+```
+
+---
+
+## What Gets Dropped (Eventually)
+
+| Old Table | Replaced By | Migration Path |
+|-----------|-------------|----------------|
+| `profiles` | `users` | Copy all columns → rename table |
+| `students` | `users` + `student_details` | Split data into base + extension |
+| `instructors` | `users` + `teacher_details` | Split data into base + extension |
+| `course_instructors` | `enrollments` (with `role_in_course = 'instructor'`) | Copy + transform |
+| `.npy` / `.pkl` files | `face_embeddings` table | One-time Python extraction script |
+
+---
+
+## RLS (Row Level Security) Strategy
+
+```sql
+-- Users can read their own row
+CREATE POLICY "Users read own" ON users
+  FOR SELECT USING (id = auth.uid());
+
+-- Admins can read all users
+CREATE POLICY "Admins read all" ON users
+  FOR SELECT USING (get_my_role() = 'admin');
+
+-- Teachers can read students in their courses
+CREATE POLICY "Teachers read enrolled students" ON users
+  FOR SELECT USING (
+    get_my_role() = 'teacher'
+    AND id IN (
+      SELECT e.user_id FROM enrollments e
+      WHERE e.course_id IN (
+        SELECT e2.course_id FROM enrollments e2
+        WHERE e2.user_id = auth.uid() AND e2.role_in_course = 'instructor'
+      )
+    )
+  );
+
+-- Student details: only the student + admins + their teachers
+-- Attendance: students see their own, teachers see their courses, admins see all
+-- Face embeddings: only admins can read/write
+-- Activity logs: admins only
+```
+
+---
+
+## Migration Execution Order
+
+> [!CAUTION]
+> This is a destructive migration. It must be done in a maintenance window with a full database backup first.
+
+| Step | What | Depends On |
+|------|------|------------|
+| 1 | Backup entire database | — |
+| 2 | Create new tables (`users`, `student_details`, `teacher_details`, `admin_details`, `face_embeddings`, `enrollments`, `activity_logs`) | — |
+| 3 | Migrate data: `profiles` + `students` → `users` + `student_details` | Step 2 |
+| 4 | Migrate data: `instructors` → `users` + `teacher_details` | Step 2 |
+| 5 | Migrate data: `course_instructors` → `enrollments` | Step 2 |
+| 6 | Extract `.npy`/`.pkl` → `face_embeddings` (Python script) | Step 2 |
+| 7 | Update `handle_new_user()` trigger to write to `users` instead of `profiles` | Step 3 |
+| 8 | Apply RLS policies on all new tables | Step 2 |
+| 9 | Update all backend controllers (swap table names, column names) | Steps 2-8 |
+| 10 | Update all frontend API calls | Step 9 |
+| 11 | Update Python face engine to read/write `face_embeddings` table | Step 6 |
+| 12 | Run full integration test | Steps 9-11 |
+| 13 | Drop old tables (`profiles`, `students`, `instructors`, `course_instructors`) | Step 12 passes |
+
+---
+
+## Estimated Effort
+
+| Area | Files Affected | Complexity |
+|------|---------------|------------|
+| SQL migration scripts | 3-4 new files | Medium |
+| Backend controllers | ~8 files | High (every query changes) |
+| Backend routes | ~5 files | Low (just imports) |
+| Frontend API client | `backendApi.ts` | Medium |
+| Frontend pages | ~10 pages reference student/teacher data | Medium |
+| Python face engine | `server.py` + new DB client | High |
+| Seed script | `seed_demo_users.js` | Low (simplifies it) |
+| **Total** | **~30 files** | **2-3 days focused work** |
+
+---
+
+## Benefits After Migration
+
+| Before | After |
+|--------|-------|
+| 4 tables for user identity | 1 base + 3 clean extensions |
+| Duplicate email/name across tables | Single source of truth |
+| Seed script stitches 3 tables together | `handle_new_user` trigger does everything |
+| Face data on filesystem (fragile) | Face data in DB (backed up, queryable) |
+| No audit trail | Full activity logging |
+| Implicit student-course relationship | Explicit `enrollments` table |
+| `course_instructors` separate from student enrollment | Unified `enrollments` with role |
+| Attendance has no "who marked it" | `marked_by` + `source` + `confidence` |
+
+---
+
+## Open Questions
+
+1. **When to execute?** — After Phase 4 (Teacher Dashboard) is stable, or as the first task of a new milestone?
+2. **Downtime tolerance?** — Can you take the app offline for 30 minutes for the migration, or does it need zero-downtime with a gradual cutover?
+3. **Face engine rewrite scope** — Do you want the face engine to query the DB directly (via Supabase REST API), or keep the current "load all into memory" approach with DB as the backing store?

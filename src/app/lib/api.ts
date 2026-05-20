@@ -1,4 +1,12 @@
 import { supabase } from "@/lib/supabase";
+import { backendRegisterStudent, backendGetStudentProfile, type RegisterStudentPayload } from "@/app/lib/backendApi";
+import {
+  buildTimetableSlots,
+  getTimetableCourseOfferings,
+  getTimetableSlots,
+  type TimetableRow,
+} from "@/app/lib/timetable";
+
 
 // ── Students ──────────────────────────────────────────────────────────────────
 export interface Student {
@@ -42,6 +50,33 @@ export const getStudent = async (id: string) => {
 };
 
 export const createStudent = async (data: Omit<Student, "id"> & { password?: string }) => {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+  if (backendUrl && data.password) {
+    // Route through the secure backend — service role key never hits the browser
+    const payload: RegisterStudentPayload = {
+      full_name: data.name,
+      email: data.email,
+      student_id: data.studentId,
+      department: data.course,
+      semester: 1, // default; StudentManagement form can add semester field
+      password: data.password,
+    };
+    const result = await backendRegisterStudent(payload);
+    // Map backend response back to Student shape
+    return {
+      id: result.user.id,
+      name: result.user.full_name ?? data.name,
+      email: result.user.email,
+      studentId: result.user.student_id ?? data.studentId,
+      course: result.user.department ?? data.course,
+      faceEnrolled: false,
+      status: "active" as const,
+      attendance: 0,
+    } satisfies Student;
+  }
+
+  // Fallback: direct Supabase insert (used when backend not running, dev only)
   const body = {
     name: data.name,
     email: data.email,
@@ -50,12 +85,13 @@ export const createStudent = async (data: Omit<Student, "id"> & { password?: str
     face_enrolled: data.faceEnrolled,
     status: data.status,
     attendance_rate: data.attendance,
-    password: data.password
+    password: data.password,
   };
   const { data: res, error } = await supabase.from("students").insert(body).select().single();
   if (error) throw new Error(error.message || JSON.stringify(error));
   return mapStudent(res);
 };
+
 
 export const updateStudent = async (id: string, data: Partial<Student>) => {
   const body: any = {};
@@ -80,6 +116,11 @@ export const deleteStudent = async (id: string) => {
 // ── Courses ───────────────────────────────────────────────────────────────────
 export interface Course {
   id: string;
+  sourceKey?: string;
+  source?: "manual" | "timetable";
+  department?: string;
+  semester?: string;
+  term?: string;
   code: string;
   name: string;
   teacher: string;
@@ -91,6 +132,11 @@ export interface Course {
 
 const mapCourse = (c: any): Course => ({
   id: String(c.id),
+  sourceKey: c.source_key || undefined,
+  source: (c.source as "manual" | "timetable" | undefined) || "manual",
+  department: c.department || undefined,
+  semester: c.semester || undefined,
+  term: c.term || undefined,
   code: c.course_code || "",
   name: c.course_name || "",
   teacher: c.teacher || "",
@@ -101,15 +147,27 @@ const mapCourse = (c: any): Course => ({
 });
 
 export const getCourses = async () => {
-  const { data, error } = await supabase.from("courses").select("*");
-  if (error) throw new Error(error.message || JSON.stringify(error));
-  return data.map(mapCourse);
+  const { data, error } = await supabase.from("timetable_entries").select("*");
+
+  if (error) {
+    console.warn("[getCourses] Timetable table fetch failed; using bundled CSV timetable courses.", error);
+    return getTimetableCourseOfferings();
+  }
+
+  if (!data || data.length === 0) return getTimetableCourseOfferings();
+
+  return getTimetableCourseOfferings(data.map(mapTimetableEntry));
 };
 
 export const createCourse = async (data: Omit<Course, "id">) => {
   const body = {
     course_name: data.name,
     course_code: data.code,
+    source: data.source ?? "manual",
+    source_key: data.sourceKey,
+    department: data.department,
+    semester: data.semester,
+    term: data.term,
     teacher: data.teacher,
     schedule: data.schedule,
     room: data.room,
@@ -125,6 +183,11 @@ export const updateCourse = async (id: string, d: Partial<Course>) => {
   const body: any = {};
   if (d.name) body.course_name = d.name;
   if (d.code) body.course_code = d.code;
+  if (d.source) body.source = d.source;
+  if (d.sourceKey) body.source_key = d.sourceKey;
+  if (d.department) body.department = d.department;
+  if (d.semester) body.semester = d.semester;
+  if (d.term) body.term = d.term;
   if (d.teacher) body.teacher = d.teacher;
   if (d.schedule) body.schedule = d.schedule;
   if (d.room) body.room = d.room;
@@ -139,6 +202,45 @@ export const deleteCourse = async (id: string) => {
   const { error } = await supabase.from("courses").delete().eq("id", id);
   if (error) throw new Error(error.message || JSON.stringify(error));
   return { message: "Deleted" };
+};
+
+const mapTimetableEntry = (row: any): TimetableRow => ({
+  id: row.id ? String(row.id) : undefined,
+  sourceKey: row.source_key || undefined,
+  entryId: row.entry_id || "",
+  department: row.department || "",
+  semester: row.semester || "",
+  term: row.term || "",
+  day: row.day_of_week || "",
+  startTime: row.start_time || "",
+  endTime: row.end_time || "",
+  courseCode: row.course_code || "",
+  courseTitle: row.course_title || "",
+  facultyCode: row.faculty_code || "",
+  facultyName: row.faculty_name || "",
+  room: row.room_lab || "",
+  batch: row.batch_group || "",
+  classType: row.class_type || "",
+  notes: row.notes || "",
+});
+
+export const getTimetableSlotsForProgram = async (department: string, semester: string) => {
+  const { data, error } = await supabase
+    .from("timetable_entries")
+    .select("*")
+    .eq("department", department)
+    .eq("semester", semester);
+
+  if (error) {
+    console.warn("[getTimetableSlotsForProgram] DB timetable fetch failed; using bundled CSV.", error);
+    return getTimetableSlots(department, semester);
+  }
+
+  if (!data || data.length === 0) {
+    return getTimetableSlots(department, semester);
+  }
+
+  return buildTimetableSlots(data.map(mapTimetableEntry));
 };
 
 // ── Attendance ────────────────────────────────────────────────────────────────
@@ -157,7 +259,7 @@ export interface AttendanceRecord {
 const mapAttendance = (a: any): AttendanceRecord => ({
   id: String(a.id),
   date: a.date_attended || "",
-  course: a.courses?.course_code || a.course_id || "",
+  course: a.timetable_course_code || a.courses?.course_code || a.course_id || "",
   teacher: a.courses?.teacher || "",
   total: a.students?.student_count || 1, // Simplified mapping
   present: a.status === "present" ? 1 : 0,
@@ -262,7 +364,7 @@ export const getWeeklyAttendanceAnalysis = async ({
 
   const { data, error } = await supabase
     .from("attendance")
-    .select("id, date_attended, status, students(id, email, student_id_text), courses(id, course_code, teacher)")
+    .select("id, date_attended, status, timetable_course_code, students(id, email, student_id_text), courses(id, course_code, teacher)")
     .gte("date_attended", toDateKey(monthStart))
     .lte("date_attended", toDateKey(monthEnd));
 
@@ -378,13 +480,37 @@ export const getTeacherStats = async (): Promise<TeacherStats> => {
 };
 
 export const getStudentStats = async (): Promise<StudentStats> => {
-  const { data: student } = await supabase.from("students").select("*").limit(1).maybeSingle();
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+  if (backendUrl) {
+    try {
+      const { profile } = await backendGetStudentProfile();
+      return {
+        attendanceRate: profile.attendance_rate ?? 0,
+        attendedClasses: 23, // Mock classes count since they are frontend only for now
+        totalClasses: 24,
+        gpa: "3.8",
+        faceEnrolled: !!profile.face_enrolled,
+      };
+    } catch (err) {
+      console.warn("[getStudentStats] Backend profile fetch failed, falling back to direct Supabase.", err);
+    }
+  }
+
+  // Fallback: direct Supabase select (dev only, when backend is not running)
+  const { data: { session } } = await supabase.auth.getSession();
+  const email = session?.user?.email;
+
+  const { data: student } = email
+    ? await supabase.from("students").select("*").eq("email", email).maybeSingle()
+    : { data: null };
+
   return {
-    attendanceRate: student?.attendance_rate ?? 96,
+    attendanceRate: student?.attendance_rate ?? 0,
     attendedClasses: 23,
     totalClasses: 24,
     gpa: "3.8",
-    faceEnrolled: student?.face_enrolled ?? true,
+    faceEnrolled: student?.face_enrolled ?? false,
   };
 };
 
