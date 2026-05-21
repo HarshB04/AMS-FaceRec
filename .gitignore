@@ -42,6 +42,11 @@ projects/
 .jetro/
 .agents/
 .mcp.json
+AGENTS.md
+GEMINI.md
+AGENT.md
+CLAUDE.md
+.windsurfrules
 
 # Old / Deprecated
 src/components/ui/
