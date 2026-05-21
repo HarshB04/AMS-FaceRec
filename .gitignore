@@ -35,3 +35,14 @@ _reference_repo/
 
 # Build artifacts
 dist/
+
+# Jetro & Agent extensions
+data/
+projects/
+.jetro/
+.agents/
+.mcp.json
+
+# Old / Deprecated
+src/components/ui/
+backend/scripts/
