@@ -5,7 +5,6 @@ os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 import cv2
 import pickle
 import numpy as np
-import os
 import threading
 import time
 import requests as http_requests
@@ -134,9 +133,10 @@ def load_model():
     # 2. Fallback to local cache if DB fetch failed
     if faces is None or labels is None:
         try:
-            with open('data/names.pkl', 'rb') as f:
+            data_dir = os.path.join(os.path.dirname(__file__), 'data')
+            with open(os.path.join(data_dir, 'names.pkl'), 'rb') as f:
                 labels = pickle.load(f)
-            with open('data/faces_data.npy', 'rb') as f:
+            with open(os.path.join(data_dir, 'faces_data.npy'), 'rb') as f:
                 faces = np.load(f)
             print(f"[face_engine] Loaded {len(faces)} face samples from local cache.")
         except Exception:
@@ -244,8 +244,7 @@ def gen_scan_frames(course_context=None):
                             "time": datetime.now().strftime("%I:%M:%S %p"),
                             "confidence": round(conf, 1)
                         })
-                    # Attendance is now logged via Express backend
-                    log_attendance_via_backend(predicted, conf, course_context)
+                    # Attendance is now logged manually via the React Frontend
                 else:
                     cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 255), 2)
                     cv2.putText(frame, "No model", (x, y-10),

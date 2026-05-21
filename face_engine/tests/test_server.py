@@ -62,11 +62,13 @@ class TestRoutes:
 class TestLoadModel:
     def test_returns_none_when_data_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(server, '__file__', str(tmp_path / "server.py"))
         (tmp_path / "data").mkdir()
         assert server.load_model() is None
 
     def test_returns_fitted_knn_when_data_valid(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(server, '__file__', str(tmp_path / "server.py"))
         data_dir = tmp_path / "data"
         data_dir.mkdir()
         n_samples = 6
@@ -87,84 +89,58 @@ class TestLoadModel:
 class TestLogAttendance:
     def test_skips_when_already_logged(self):
         server.logged_students.add("DupUser")
-        with patch.object(server.http_requests, "get") as mock_get:
-            with patch.object(server.http_requests, "post") as mock_post:
-                server.log_attendance("DupUser")
-        mock_get.assert_not_called()
+        with patch.object(server.http_requests, "post") as mock_post:
+            server.log_attendance_via_backend("DupUser", 85.0)
         mock_post.assert_not_called()
 
-    def test_unknown_student_does_not_post(self):
-        empty = MagicMock()
-        empty.json.return_value = []
-
-        def get_side_effect(url, headers=None):
-            return empty
-
-        with patch.object(server.http_requests, "get", side_effect=get_side_effect):
-            with patch.object(server.http_requests, "post") as mock_post:
-                server.log_attendance("Ghost")
-        mock_post.assert_not_called()
+    def test_unknown_student_does_not_post_and_adds_to_logged(self):
+        post_mock = MagicMock()
+        post_mock.status_code = 404
+        
+        with patch.object(server.http_requests, "post", return_value=post_mock) as mock_post:
+            server.log_attendance_via_backend("Ghost", 75.0)
+            
+        mock_post.assert_called_once()
         assert "Ghost" in server.logged_students
 
-    def test_posts_attendance_with_course_id_when_resolved(self):
-        student_mock = MagicMock()
-        student_mock.json.return_value = [{"id": "stu-1", "course": "CS101"}]
-        course_mock = MagicMock()
-        course_mock.json.return_value = [{"id": "course-1"}]
+    def test_posts_attendance_with_course_context(self):
         post_mock = MagicMock()
         post_mock.status_code = 201
+        post_mock.json.return_value = {"student_name": "Alice"}
 
-        def get_side_effect(url, headers=None):
-            if "/students?" in url:
-                return student_mock
-            if "/courses?" in url:
-                return course_mock
-            raise AssertionError(f"unexpected GET url: {url}")
-
-        with patch.object(server.http_requests, "get", side_effect=get_side_effect):
-            with patch.object(server.http_requests, "post", return_value=post_mock) as mock_post:
-                server.log_attendance("Alice")
+        course_context = {"course_code": "CS101", "department": "CS"}
+        
+        with patch.object(server.http_requests, "post", return_value=post_mock) as mock_post:
+            server.log_attendance_via_backend("Alice", 92.5, course_context)
 
         mock_post.assert_called_once()
         payload = mock_post.call_args.kwargs["json"]
-        assert payload["student_id"] == "stu-1"
-        assert payload["status"] == "present"
-        assert payload["course_id"] == "course-1"
-        assert "date_attended" in payload
+        assert payload["sbrn"] == "Alice"
+        assert payload["confidence"] == 92.5
+        assert payload["course_code"] == "CS101"
+        assert payload["department"] == "CS"
+        assert "date" in payload
+        assert "time" in payload
         assert "Alice" in server.logged_students
 
-    def test_posts_without_course_id_when_student_has_no_course(self):
-        student_mock = MagicMock()
-        student_mock.json.return_value = [{"id": "stu-2", "course": ""}]
+    def test_posts_without_course_context(self):
         post_mock = MagicMock()
         post_mock.status_code = 200
+        post_mock.json.return_value = {"student_name": "Bob"}
 
-        def get_side_effect(url, headers=None):
-            if "/students?" in url:
-                return student_mock
-            raise AssertionError(f"unexpected GET url: {url}")
-
-        with patch.object(server.http_requests, "get", side_effect=get_side_effect):
-            with patch.object(server.http_requests, "post", return_value=post_mock) as mock_post:
-                server.log_attendance("Bob")
+        with patch.object(server.http_requests, "post", return_value=post_mock) as mock_post:
+            server.log_attendance_via_backend("Bob", 88.0)
 
         payload = mock_post.call_args.kwargs["json"]
-        assert "course_id" not in payload
+        assert "course_code" not in payload
         assert "Bob" in server.logged_students
 
-    def test_adds_to_logged_on_conflict_status(self):
-        student_mock = MagicMock()
-        student_mock.json.return_value = [{"id": "stu-3", "course": ""}]
+    def test_adds_to_logged_on_forbidden_status(self):
         post_mock = MagicMock()
-        post_mock.status_code = 409
+        post_mock.status_code = 403
+        post_mock.json.return_value = {"message": "Not Enrolled"}
 
-        def get_side_effect(url, headers=None):
-            if "/students?" in url:
-                return student_mock
-            raise AssertionError(f"unexpected GET url: {url}")
-
-        with patch.object(server.http_requests, "get", side_effect=get_side_effect):
-            with patch.object(server.http_requests, "post", return_value=post_mock):
-                server.log_attendance("Carol")
+        with patch.object(server.http_requests, "post", return_value=post_mock):
+            server.log_attendance_via_backend("Carol", 90.0)
 
         assert "Carol" in server.logged_students

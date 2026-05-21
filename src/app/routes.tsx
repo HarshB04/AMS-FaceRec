@@ -34,7 +34,7 @@ const PageLoader = () => (
 function AdminLayout() {
   return (
     <AuthGuard role="admin">
-      <DashboardLayout role="admin" title="Admin Dashboard" userName="Admin User" />
+      <DashboardLayout role="admin" title="Admin Dashboard" />
     </AuthGuard>
   );
 }
@@ -42,7 +42,7 @@ function AdminLayout() {
 function TeacherLayout() {
   return (
     <AuthGuard role="teacher">
-      <DashboardLayout role="teacher" title="Teacher Dashboard" userName="Dr. Smith" />
+      <DashboardLayout role="teacher" title="Teacher Dashboard" />
     </AuthGuard>
   );
 }
@@ -50,7 +50,7 @@ function TeacherLayout() {
 function StudentLayout() {
   return (
     <AuthGuard role="student">
-      <DashboardLayout role="student" title="Student Dashboard" userName="Sarah Johnson" />
+      <DashboardLayout role="student" title="Student Dashboard" />
     </AuthGuard>
   );
 }

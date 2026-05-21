@@ -2,6 +2,11 @@ const { supabaseAnon, supabaseAdmin } = require("../config/supabaseClient");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+function getDetails(d) {
+  if (!d) return {};
+  return Array.isArray(d) ? (d[0] || {}) : d;
+}
+
 /**
  * Sign in a user and verify their role from the profiles table.
  * Returns { session, profile } or throws an error.
@@ -62,6 +67,9 @@ async function signInAndVerifyRole(email, password, expectedRole) {
   }
 
   // Flatten the user object for the frontend
+  const studentDetails = getDetails(user.student_details);
+  const teacherDetails = getDetails(user.teacher_details);
+
   const profile = {
     id: user.id,
     role: user.role,
@@ -72,9 +80,9 @@ async function signInAndVerifyRole(email, password, expectedRole) {
     phone: user.phone,
     profile_image: user.avatar_url,
     approval_status: user.approval_status,
-    ...(user.student_details?.[0] || {}), // Adds sbrn, semester, session
-    student_id: user.student_details?.[0]?.sbrn, // Alias for frontend compatibility
-    ...(user.teacher_details?.[0] || {})  // Adds faculty_code, designation
+    ...studentDetails, // Adds sbrn, semester, session
+    student_id: studentDetails.sbrn, // Alias for frontend compatibility
+    ...teacherDetails  // Adds faculty_code, designation
   };
 
   return { session: authData.session, profile };
@@ -203,6 +211,9 @@ async function getMe(req, res) {
       return res.status(404).json({ error: "Not Found", message: "User account not found." });
     }
 
+    const studentDetails = getDetails(user.student_details);
+    const teacherDetails = getDetails(user.teacher_details);
+
     const profile = {
       id: user.id,
       role: user.role,
@@ -213,9 +224,9 @@ async function getMe(req, res) {
       phone: user.phone,
       profile_image: user.avatar_url,
       approval_status: user.approval_status,
-      ...(user.student_details?.[0] || {}),
-      student_id: user.student_details?.[0]?.sbrn, // Alias
-      ...(user.teacher_details?.[0] || {})
+      ...studentDetails,
+      student_id: studentDetails.sbrn, // Alias
+      ...teacherDetails
     };
 
     return res.status(200).json({ user: profile });

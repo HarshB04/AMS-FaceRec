@@ -55,10 +55,10 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Tighter rate limiter for auth endpoints — 10 attempts per 15 minutes
+// Tighter rate limiter for auth endpoints — 100 attempts per 15 minutes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too Many Requests", message: "Too many login attempts. Please wait 15 minutes." },

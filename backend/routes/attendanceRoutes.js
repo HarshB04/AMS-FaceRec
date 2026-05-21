@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const { logAttendance } = require("../controllers/attendanceController");
+const { logAttendance, manualLogAttendance } = require("../controllers/attendanceController");
+const { authMiddleware } = require("../middleware/authMiddleware");
+const { requireRole } = require("../middleware/roleMiddleware");
 
 /**
  * POST /api/attendance/log
@@ -13,5 +15,13 @@ const { logAttendance } = require("../controllers/attendanceController");
  * Response: { success, student_name, sbrn, date, time, course_id }
  */
 router.post("/log", logAttendance);
+
+/**
+ * POST /api/attendance/manual-log
+ *
+ * External — called by React frontend.
+ * Requires teacher or admin role.
+ */
+router.post("/manual-log", authMiddleware, requireRole(["teacher", "admin"]), manualLogAttendance);
 
 module.exports = router;

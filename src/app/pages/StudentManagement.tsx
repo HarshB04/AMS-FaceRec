@@ -141,6 +141,7 @@ export function StudentManagement() {
   const [enrollDone, setEnrollDone] = useState(false);
   const [enrollError, setEnrollError] = useState("");
   const [flaskOnline, setFlaskOnline] = useState<boolean | null>(null);
+  const [enrollSessionId, setEnrollSessionId] = useState<number>(Date.now());
   const enrollPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const openFaceModal = async (s: Student) => {
@@ -149,6 +150,7 @@ export function StudentManagement() {
     setEnrollCount(0);
     setEnrollDone(false);
     setEnrollError("");
+    setEnrollSessionId(Date.now());
 
     // Ping Flask
     try {
@@ -475,7 +477,7 @@ export function StudentManagement() {
               <div className="rounded-xl overflow-hidden border border-slate-200 bg-black aspect-video relative">
                 {!enrollDone && (
                   <img
-                    src={`${FLASK_URL}/enroll_feed?name=${encodeURIComponent(faceModalStudent.studentId)}&t=${Date.now()}`}
+                    src={`${FLASK_URL}/enroll_feed?name=${encodeURIComponent(faceModalStudent.studentId)}&t=${enrollSessionId}`}
                     alt="Face capture stream"
                     className="w-full h-full object-cover"
                   />

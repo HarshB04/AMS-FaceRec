@@ -207,4 +207,116 @@ async function logAttendance(req, res) {
   }
 }
 
-module.exports = { logAttendance };
+/**
+ * POST /api/attendance/manual-log
+ *
+ * External endpoint — called by the React frontend when teacher clicks "Confirm".
+ * Protected by authMiddleware & requireRole("teacher").
+ *
+ * Body: { sbrn, date, time, confidence, course_id?, course_code?, department?, semester? }
+ */
+async function manualLogAttendance(req, res) {
+  try {
+    const { sbrn, date, time, confidence, course_id, course_code, department, semester } = req.body;
+
+    if (!sbrn || typeof sbrn !== "string" || sbrn.trim().length === 0) {
+      return res.status(400).json({ error: "Validation Error", message: "sbrn is required." });
+    }
+
+    const normalizedSbrn = sbrn.trim().toUpperCase();
+    const attendanceDate = date || new Date().toISOString().split("T")[0];
+
+    // 1. Fetch student
+    const { data: studentRecord, error: studentError } = await supabaseAdmin
+      .from("student_details")
+      .select(`
+        user_id,
+        users!inner(
+          full_name,
+          email,
+          is_active,
+          branch,
+          face_embeddings(id)
+        )
+      `)
+      .eq("sbrn", normalizedSbrn)
+      .maybeSingle();
+
+    if (studentError) throw new Error(studentError.message);
+
+    if (!studentRecord || !studentRecord.users) {
+      return res.status(404).json({ error: "Not Found", message: `Student '${normalizedSbrn}' not found.` });
+    }
+
+    const studentUser = studentRecord.users;
+    if (!studentUser.is_active) {
+      return res.status(403).json({ error: "Inactive", message: `Student '${normalizedSbrn}' is not active.` });
+    }
+
+    // 2. Look up course_id
+    let courseId = course_id || null;
+
+    if (course_code && String(course_code).trim().length > 0) {
+      const courseLookup = String(course_code).trim();
+      let query = supabaseAdmin.from("courses").select("id").eq("course_code", courseLookup);
+      if (department) query = query.eq("department", String(department).trim());
+      if (semester) query = query.eq("semester", String(semester).trim());
+      
+      const { data: codeMatches, error: codeError } = await query.limit(1);
+      if (codeError) throw new Error(codeError.message);
+      if (codeMatches?.[0]) courseId = codeMatches[0].id;
+    }
+
+    if (!courseId && studentUser.branch) {
+      const { data: courseMatches } = await supabaseAdmin
+        .from("courses")
+        .select("id")
+        .eq("course_name", studentUser.branch)
+        .limit(1);
+      if (courseMatches?.[0]) courseId = courseMatches[0].id;
+    }
+
+    // 3. Insert attendance
+    const attendancePayload = {
+      student_id: studentRecord.user_id,
+      date_attended: attendanceDate,
+      status: "present",
+    };
+    if (courseId) attendancePayload.course_id = courseId;
+
+    const { error: insertError } = await supabaseAdmin
+      .from("attendance")
+      .upsert(attendancePayload, {
+        onConflict: "student_id,course_id,date_attended",
+        ignoreDuplicates: true,
+      });
+
+    if (insertError) {
+      if (insertError.code === "23505") {
+        return res.status(200).json({
+          success: true,
+          message: `Attendance already recorded for ${normalizedSbrn} today.`,
+          student_name: studentUser.full_name,
+          sbrn: normalizedSbrn,
+          already_logged: true,
+        });
+      }
+      throw new Error(insertError.message);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `Attendance marked present for ${studentUser.full_name}.`,
+      student_name: studentUser.full_name,
+      sbrn: normalizedSbrn,
+      date: attendanceDate,
+      time: time || null,
+      course_id: courseId,
+    });
+  } catch (err) {
+    console.error("[attendanceController] manualLogAttendance error:", err.message);
+    return res.status(500).json({ error: "Internal Server Error", message: err.message || "Failed to log attendance manually." });
+  }
+}
+
+module.exports = { logAttendance, manualLogAttendance };

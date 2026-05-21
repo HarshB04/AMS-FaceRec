@@ -35,8 +35,10 @@ async function enrollComplete(req, res) {
       .from("student_details")
       .select(`
         user_id,
-        users!inner(full_name),
-        face_embeddings(id)
+        users!inner(
+          full_name,
+          face_embeddings(id)
+        )
       `)
       .eq("sbrn", normalizedSbrn)
       .maybeSingle();
@@ -53,7 +55,7 @@ async function enrollComplete(req, res) {
       });
     }
 
-    const isEnrolled = studentRecord.face_embeddings && studentRecord.face_embeddings.length > 0;
+    const isEnrolled = studentRecord.users.face_embeddings && studentRecord.users.face_embeddings.length > 0;
     const studentName = studentRecord.users.full_name;
 
     // 2. Guard: already enrolled?
@@ -114,8 +116,7 @@ async function getEmbeddings(req, res) {
         users!inner(
           student_details!inner(sbrn)
         )
-      `)
-      .not("embedding", "eq", "{}");
+      `);
 
     if (error) throw error;
 

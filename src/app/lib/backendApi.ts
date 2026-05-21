@@ -125,7 +125,6 @@ export async function backendGetMe(): Promise<{ user: UserProfile }> {
 export async function backendLookupSbrn(
   sbrn: string
 ): Promise<{ email: string; name?: string }> {
-  const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) || "http://localhost:5000";
   const res = await fetch(`${BACKEND_URL}/api/auth/lookup-sbrn`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -220,7 +219,7 @@ export interface SelfRegisterPayload {
  */
 export async function backendRegisterSelf(payload: SelfRegisterPayload): Promise<{ message: string }> {
   const response = await fetch(
-    `${(import.meta.env.VITE_BACKEND_URL as string) || "http://localhost:5000"}/api/auth/register`,
+    `${BACKEND_URL}/api/auth/register`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -323,4 +322,25 @@ export async function backendFaceEnrollComplete(
       body: JSON.stringify({ sbrn }),
     }
   );
+}
+
+/**
+ * Manually log attendance for a student (teacher/admin only).
+ */
+export async function backendManualLogAttendance(
+  payload: {
+    sbrn: string;
+    date?: string;
+    time?: string;
+    confidence?: number;
+    course_code?: string;
+    course_name?: string;
+    department?: string;
+    semester?: string;
+  }
+): Promise<{ success: boolean; message: string; student_name: string; sbrn: string }> {
+  return backendFetch("/api/attendance/manual-log", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

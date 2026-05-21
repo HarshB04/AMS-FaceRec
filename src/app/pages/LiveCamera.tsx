@@ -5,7 +5,7 @@ import {
   XCircle, Power, User, AlertCircle, BookOpen, MapPin,
 } from "lucide-react";
 import { TIMETABLE_ROWS, buildTimetableSlots, type TimetableSlot } from "../lib/timetable";
-import { backendApi } from "@/app/lib/backendApi";
+import { backendApi, backendManualLogAttendance } from "@/app/lib/backendApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,9 +86,11 @@ export function LiveCamera() {
   const [nextSlot, setNextSlot]               = useState<TimetableSlot | null>(null);
 
   const [recognized, setRecognized]           = useState<RecognizedStudent[]>([]);
+  const [pendingLog, setPendingLog]           = useState<AttendanceRecord[]>([]);
   const [attendanceLog, setAttendanceLog]     = useState<AttendanceRecord[]>([]);
   const [matchedStudent, setMatchedStudent]   = useState<RecognizedStudent | null>(null);
   const [totalStudents, setTotalStudents]     = useState(0);
+  const [confirmingId, setConfirmingId]       = useState<string | null>(null);
 
   // ── Server health check ───────────────────────────────────────────────────
   useEffect(() => {
@@ -146,15 +148,15 @@ export function LiveCamera() {
       const res = await fetch(`${FLASK_URL}/recognized`);
       const data: RecognizedStudent[] = await res.json();
 
-      // Detect newly recognized student (not already in log)
+      // Detect newly recognized student (not in attendance log and not in pending log)
       const newStudents = data.filter(
-        (s) => !attendanceLog.some((r) => r.name === s.name)
+        (s) => !attendanceLog.some((r) => r.name === s.name) && !pendingLog.some((r) => r.name === s.name)
       );
       if (newStudents.length > 0) {
         const newest = newStudents[newStudents.length - 1];
         setMatchedStudent(newest);
-        // Add to log
-        setAttendanceLog((prev) => [
+        // Add to pending log
+        setPendingLog((prev) => [
           {
             id: `${newest.name}-${Date.now()}`,
             name: newest.name,
@@ -172,7 +174,7 @@ export function LiveCamera() {
     } catch {
       // server may be busy; silently ignore
     }
-  }, [attendanceLog]);
+  }, [attendanceLog, pendingLog]);
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -185,6 +187,7 @@ export function LiveCamera() {
     setIsStreaming(true);
     setElapsed(0);
     setRecognized([]);
+    setPendingLog([]);
     setAttendanceLog([]);
 
     const params = new URLSearchParams({ t: String(Date.now()) });
@@ -205,6 +208,30 @@ export function LiveCamera() {
 
   const presentCount = attendanceLog.length;
   const absentCount  = Math.max(0, totalStudents - presentCount);
+
+  // ── Manual Confirmation ───────────────────────────────────────────────────
+  const confirmAttendance = async (record: AttendanceRecord) => {
+    setConfirmingId(record.id);
+    try {
+      await backendManualLogAttendance({
+        sbrn: record.sbrn,
+        date: new Date().toISOString().split("T")[0],
+        time: record.time,
+        confidence: record.confidence,
+        course_code: currentSlot?.courseCode,
+        course_name: currentSlot?.courseTitle,
+        department: currentSlot?.department,
+        semester: currentSlot?.semester,
+      });
+      // Move to attendanceLog
+      setAttendanceLog((prev) => [record, ...prev]);
+      setPendingLog((prev) => prev.filter((r) => r.id !== record.id));
+    } catch (err: any) {
+      alert(`Failed to log attendance for ${record.name}: ${err.message || err}`);
+    } finally {
+      setConfirmingId(null);
+    }
+  };
 
   // ── Export attendance as CSV ──────────────────────────────────────────────
   const exportCsv = () => {
@@ -400,7 +427,7 @@ export function LiveCamera() {
           </div>
 
           <div className="flex-1 space-y-2 overflow-y-auto max-h-[360px] pr-1">
-            {attendanceLog.length === 0 ? (
+            {attendanceLog.length === 0 && pendingLog.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                 <Camera className="w-10 h-10 mb-2 opacity-30" />
                 <p className="text-[0.8125rem]">No attendance marked yet</p>
@@ -409,30 +436,63 @@ export function LiveCamera() {
                 </p>
               </div>
             ) : (
-              attendanceLog.map((record) => (
-                <div
-                  key={record.id}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-emerald-200 transition-all"
-                >
-                  <div className="w-9 h-9 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-[0.6875rem] font-bold flex-shrink-0">
-                    {record.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[0.8125rem] text-slate-800 font-medium truncate">{record.name}</p>
-                      <span className="text-[0.6875rem] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ml-1">
-                        Present
-                      </span>
+              <>
+                {/* Pending Log */}
+                {pendingLog.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 transition-all"
+                  >
+                    <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white text-[0.6875rem] font-bold flex-shrink-0">
+                      {record.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                     </div>
-                    <div className="flex items-center gap-2 text-[0.6875rem] text-slate-400 mt-0.5">
-                      <Clock className="w-3 h-3" />
-                      <span>{record.time}</span>
-                      <span>·</span>
-                      <span className="text-emerald-500 font-medium">{record.confidence}%</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[0.8125rem] text-slate-800 font-medium truncate">{record.name}</p>
+                        <button 
+                          onClick={() => confirmAttendance(record)}
+                          disabled={confirmingId === record.id}
+                          className="text-[0.6875rem] bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-md font-semibold flex-shrink-0 ml-1 transition-colors disabled:opacity-50"
+                        >
+                          {confirmingId === record.id ? "Saving..." : "Confirm"}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 text-[0.6875rem] text-amber-700 mt-0.5">
+                        <Clock className="w-3 h-3" />
+                        <span>{record.time}</span>
+                        <span>·</span>
+                        <span className="font-medium">Pending Confirmation</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                ))}
+                
+                {/* Confirmed Log */}
+                {attendanceLog.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 transition-all"
+                  >
+                    <div className="w-9 h-9 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center text-white text-[0.6875rem] font-bold flex-shrink-0">
+                      {record.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[0.8125rem] text-slate-800 font-medium truncate">{record.name}</p>
+                        <span className="text-[0.6875rem] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ml-1">
+                          Present
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[0.6875rem] text-slate-400 mt-0.5">
+                        <Clock className="w-3 h-3" />
+                        <span>{record.time}</span>
+                        <span>·</span>
+                        <span className="text-emerald-500 font-medium">{record.confidence}%</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
 

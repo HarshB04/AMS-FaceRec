@@ -2,6 +2,11 @@ const { supabaseAdmin } = require("../config/supabaseClient");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+function getDetails(d) {
+  if (!d) return {};
+  return Array.isArray(d) ? (d[0] || {}) : d;
+}
+
 /** Validate required student registration fields */
 function validateStudentPayload(body) {
   const errors = [];
@@ -161,7 +166,7 @@ async function getProfile(req, res) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const studentDetails = user.student_details?.[0] || {};
+    const studentDetails = getDetails(user.student_details);
 
     return res.status(200).json({
       profile: {
@@ -206,7 +211,7 @@ async function getAllStudents(req, res) {
     if (error) throw error;
 
     const enriched = (users || []).map((u) => {
-      const details = u.student_details?.[0] || {};
+      const details = getDetails(u.student_details);
       return {
         id: u.id,
         email: u.email,

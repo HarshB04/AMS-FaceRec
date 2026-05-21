@@ -1,6 +1,11 @@
 const { supabaseAdmin } = require("../config/supabaseClient");
 const { sendApprovalEmail, sendRejectionEmail } = require("../utils/emailService");
 
+function getDetails(d) {
+  if (!d) return {};
+  return Array.isArray(d) ? (d[0] || {}) : d;
+}
+
 /**
  * GET /api/admin/pending-users
  *
@@ -21,13 +26,16 @@ async function getPendingUsers(req, res) {
     }
 
     // Flatten student_details
-    const flattenedUsers = (data || []).map(u => ({
-      ...u,
-      department: u.branch, // for backwards compatibility in UI
-      student_id: u.student_details?.[0]?.sbrn,
-      semester: u.student_details?.[0]?.semester,
-      session: u.student_details?.[0]?.session
-    }));
+    const flattenedUsers = (data || []).map(u => {
+      const details = getDetails(u.student_details);
+      return {
+        ...u,
+        department: u.branch, // for backwards compatibility in UI
+        student_id: details.sbrn,
+        semester: details.semester,
+        session: details.session
+      };
+    });
 
     return res.status(200).json({
       users: flattenedUsers,
@@ -80,14 +88,17 @@ async function getAllRegistrationUsers(req, res) {
 
     // 3. Merge and sort newest-first
     const merged = profiles
-      .map((p) => ({
-        ...p,
-        department: p.branch,
-        student_id: p.student_details?.[0]?.sbrn,
-        semester: p.student_details?.[0]?.semester,
-        session: p.student_details?.[0]?.session,
-        created_at: authCreatedAtMap[p.id] || p.created_at || new Date().toISOString(),
-      }))
+      .map((p) => {
+        const details = getDetails(p.student_details);
+        return {
+          ...p,
+          department: p.branch,
+          student_id: details.sbrn,
+          semester: details.semester,
+          session: details.session,
+          created_at: authCreatedAtMap[p.id] || p.created_at || new Date().toISOString(),
+        };
+      })
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return res.status(200).json({ users: merged, count: merged.length });
@@ -150,7 +161,7 @@ async function approveUser(req, res) {
     console.log(`[approvalController] users.is_active set to true for ${profile.email}`);
 
     // 4. Send approval email (fire-and-forget — errors are caught inside emailService)
-    const sbrn = profile.student_details?.[0]?.sbrn || "";
+    const sbrn = getDetails(profile.student_details).sbrn || "";
     sendApprovalEmail({
       to: profile.email,
       name: profile.full_name || profile.email,

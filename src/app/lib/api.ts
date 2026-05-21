@@ -1,5 +1,12 @@
 import { supabase } from "@/lib/supabase";
-import { backendRegisterStudent, backendGetStudentProfile, type RegisterStudentPayload } from "@/app/lib/backendApi";
+import {
+  backendRegisterStudent,
+  backendGetStudentProfile,
+  backendGetAllStudents,
+  backendUpdateStudent,
+  backendDeleteStudent,
+  type RegisterStudentPayload,
+} from "@/app/lib/backendApi";
 import {
   buildTimetableSlots,
   getTimetableCourseOfferings,
@@ -31,22 +38,97 @@ const mapStudent = (s: any): Student => ({
   attendance: s.attendance_rate || 0,
 });
 
+const mapRestructuredStudent = (u: any): Student => {
+  const details = u.student_details?.[0] || {};
+  const faceEnrolled = u.face_embeddings ? (Array.isArray(u.face_embeddings) ? u.face_embeddings.length > 0 : !!u.face_embeddings) : false;
+  return {
+    id: u.id,
+    name: u.full_name || u.email,
+    email: u.email,
+    studentId: details.sbrn || "",
+    course: u.branch || "",
+    faceEnrolled: faceEnrolled,
+    status: u.is_active ? "active" : "inactive",
+    attendance: Number(details.attendance_rate) || 0,
+  };
+};
+
 export const getStudents = async () => {
-  const { data, error } = await supabase.from("students").select("*");
-  if (error) throw new Error(error.message || JSON.stringify(error));
-  return data.map(mapStudent);
+  try {
+    const res = await backendGetAllStudents();
+    return res.students.map((u: any): Student => ({
+      id: u.id,
+      name: u.full_name || u.email,
+      email: u.email,
+      studentId: u.student_id || "",
+      course: u.department || "",
+      faceEnrolled: !!u.face_enrolled,
+      status: (u.status as "active" | "inactive") || "active",
+      attendance: u.attendance_rate || 0,
+    }));
+  } catch (err) {
+    console.warn("Falling back to direct supabase users & student_details tables", err);
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select(`
+          id, email, full_name, branch, phone, avatar_url, role, is_active,
+          student_details ( sbrn, semester, session, attendance_rate ),
+          face_embeddings ( id )
+        `)
+        .eq("role", "student");
+      if (error) throw error;
+      return (data || []).map(mapRestructuredStudent);
+    } catch (fallbackErr) {
+      console.warn("Falling back to legacy direct supabase students table", fallbackErr);
+      const { data, error } = await supabase.from("students").select("*");
+      if (error) throw new Error(error.message || JSON.stringify(error));
+      return data.map(mapStudent);
+    }
+  }
 };
 
 export const getStudentsByCourse = async (courseName: string) => {
-  const { data, error } = await supabase.from("students").select("*").eq("course", courseName);
-  if (error) throw new Error(error.message || JSON.stringify(error));
-  return data.map(mapStudent);
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select(`
+        id, email, full_name, branch, phone, avatar_url, role, is_active,
+        student_details ( sbrn, semester, session, attendance_rate ),
+        face_embeddings ( id )
+      `)
+      .eq("role", "student")
+      .eq("branch", courseName);
+    if (error) throw error;
+    return (data || []).map(mapRestructuredStudent);
+  } catch (err) {
+    console.warn("Falling back to direct supabase students table", err);
+    const { data, error } = await supabase.from("students").select("*").eq("course", courseName);
+    if (error) throw new Error(error.message || JSON.stringify(error));
+    return data.map(mapStudent);
+  }
 };
 
 export const getStudent = async (id: string) => {
-  const { data, error } = await supabase.from("students").select("*").eq("id", id).single();
-  if (error) throw new Error(error.message || JSON.stringify(error));
-  return mapStudent(data);
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select(`
+        id, email, full_name, branch, phone, avatar_url, role, is_active,
+        student_details ( sbrn, semester, session, attendance_rate ),
+        face_embeddings ( id )
+      `)
+      .eq("role", "student")
+      .eq("id", id)
+      .single();
+    if (error) throw error;
+    return mapRestructuredStudent(data);
+  } catch (err) {
+    console.warn("Falling back to direct supabase students table", err);
+    const { data, error } = await supabase.from("students").select("*").eq("id", id).single();
+    if (error) throw new Error(error.message || JSON.stringify(error));
+    return mapStudent(data);
+  }
 };
 
 export const createStudent = async (data: Omit<Student, "id"> & { password?: string }) => {
@@ -94,23 +176,94 @@ export const createStudent = async (data: Omit<Student, "id"> & { password?: str
 
 
 export const updateStudent = async (id: string, data: Partial<Student>) => {
-  const body: any = {};
-  if (data.name) body.name = data.name;
-  if (data.email) body.email = data.email;
-  if (data.studentId) body.student_id_text = data.studentId;
-  if (data.course) body.course = data.course;
-  if (data.faceEnrolled !== undefined) body.face_enrolled = data.faceEnrolled;
-  if (data.status) body.status = data.status;
-  if (data.attendance !== undefined) body.attendance_rate = data.attendance;
-  const { data: res, error } = await supabase.from("students").update(body).eq("id", id).select().single();
-  if (error) throw new Error(error.message || JSON.stringify(error));
-  return mapStudent(res);
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+  if (backendUrl) {
+    try {
+      const payload: any = {};
+      if (data.name) payload.full_name = data.name;
+      if (data.course) payload.department = data.course;
+      if (data.studentId) payload.student_id = data.studentId;
+      if (data.status) payload.is_active = data.status === "active";
+      
+      const res = await backendUpdateStudent(id, payload);
+      const u = res.profile;
+      return {
+        id: u.id,
+        name: u.full_name || data.name || "",
+        email: u.email || data.email || "",
+        studentId: u.student_id || data.studentId || "",
+        course: u.department || data.course || "",
+        faceEnrolled: !!data.faceEnrolled,
+        status: (u.is_active ? "active" : "inactive") as "active" | "inactive",
+        attendance: data.attendance || 0,
+      } satisfies Student;
+    } catch (err) {
+      console.warn("[updateStudent] Backend update failed, falling back to direct Supabase.", err);
+    }
+  }
+
+  // Direct fallback
+  try {
+    const userBody: any = {};
+    if (data.name) userBody.full_name = data.name;
+    if (data.email) userBody.email = data.email;
+    if (data.course) userBody.branch = data.course;
+    if (data.status) userBody.is_active = data.status === "active";
+
+    const detailsBody: any = {};
+    if (data.studentId) detailsBody.sbrn = data.studentId;
+    if (data.attendance !== undefined) detailsBody.attendance_rate = data.attendance;
+
+    if (Object.keys(userBody).length > 0) {
+      const { error } = await supabase.from("users").update(userBody).eq("id", id);
+      if (error) throw error;
+    }
+    if (Object.keys(detailsBody).length > 0) {
+      const { error } = await supabase.from("student_details").update(detailsBody).eq("user_id", id);
+      if (error) throw error;
+    }
+
+    return getStudent(id);
+  } catch (err) {
+    console.warn("Falling back to legacy students table update", err);
+    const body: any = {};
+    if (data.name) body.name = data.name;
+    if (data.email) body.email = data.email;
+    if (data.studentId) body.student_id_text = data.studentId;
+    if (data.course) body.course = data.course;
+    if (data.faceEnrolled !== undefined) body.face_enrolled = data.faceEnrolled;
+    if (data.status) body.status = data.status;
+    if (data.attendance !== undefined) body.attendance_rate = data.attendance;
+    const { data: res, error } = await supabase.from("students").update(body).eq("id", id).select().single();
+    if (error) throw new Error(error.message || JSON.stringify(error));
+    return mapStudent(res);
+  }
 };
 
 export const deleteStudent = async (id: string) => {
-  const { error } = await supabase.from("students").delete().eq("id", id);
-  if (error) throw new Error(error.message || JSON.stringify(error));
-  return { message: "Deleted" };
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+  if (backendUrl) {
+    try {
+      await backendDeleteStudent(id);
+      return { message: "Deleted" };
+    } catch (err) {
+      console.warn("[deleteStudent] Backend delete failed, falling back to direct Supabase.", err);
+    }
+  }
+
+  // Direct fallback
+  try {
+    const { error } = await supabase.from("users").delete().eq("id", id);
+    if (error) throw error;
+    return { message: "Deleted" };
+  } catch (err) {
+    console.warn("Falling back to legacy students table delete", err);
+    const { error } = await supabase.from("students").delete().eq("id", id);
+    if (error) throw new Error(error.message || JSON.stringify(error));
+    return { message: "Deleted" };
+  }
 };
 
 // ── Courses ───────────────────────────────────────────────────────────────────
@@ -436,47 +589,100 @@ export interface StudentStats {
 }
 
 export const getAdminStats = async (): Promise<AdminStats> => {
-  const [{ count: totalStudents }, { count: activeStudents }, { count: totalCourses }, { count: totalTeachers }, { data: attendance }, { count: enrolledFace }] = await Promise.all([
-    supabase.from("students").select("*", { count: "exact", head: true }),
-    supabase.from("students").select("*", { count: "exact", head: true }).eq("status", "active"),
-    supabase.from("courses").select("*", { count: "exact", head: true }),
-    supabase.from("instructors").select("*", { count: "exact", head: true }),
-    supabase.from("attendance").select("status"),
-    supabase.from("students").select("*", { count: "exact", head: true }).eq("face_enrolled", true)
-  ]);
+  try {
+    const [
+      { count: totalStudents },
+      { count: activeStudents },
+      { count: totalCourses },
+      { count: totalTeachers },
+      { data: attendance },
+      { count: enrolledFace }
+    ] = await Promise.all([
+      supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "student"),
+      supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "student").eq("is_active", true),
+      supabase.from("courses").select("*", { count: "exact", head: true }),
+      supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "teacher"),
+      supabase.from("attendance").select("status"),
+      supabase.from("face_embeddings").select("*", { count: "exact", head: true }).eq("is_active", true)
+    ]);
 
-  const totalPresent = attendance?.filter((a: any) => a.status === "present").length ?? 0;
-  const totalRecords = attendance?.length ?? 0;
-  const overallRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
+    const totalPresent = attendance?.filter((a: any) => a.status === "present").length ?? 0;
+    const totalRecords = attendance?.length ?? 0;
+    const overallRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
 
-  return {
-    totalStudents: totalStudents ?? 0,
-    activeStudents: activeStudents ?? 0,
-    totalCourses: totalCourses ?? 0,
-    totalTeachers: totalTeachers ?? 0,
-    attendanceRate: overallRate,
-    faceEnrolled: enrolledFace ?? 0,
-    activeSessions: 3,
-  };
+    return {
+      totalStudents: totalStudents ?? 0,
+      activeStudents: activeStudents ?? 0,
+      totalCourses: totalCourses ?? 0,
+      totalTeachers: totalTeachers ?? 0,
+      attendanceRate: overallRate,
+      faceEnrolled: enrolledFace ?? 0,
+      activeSessions: 3,
+    };
+  } catch (err) {
+    console.warn("Falling back to legacy stats query in getAdminStats", err);
+    const [{ count: totalStudents }, { count: activeStudents }, { count: totalCourses }, { count: totalTeachers }, { data: attendance }, { count: enrolledFace }] = await Promise.all([
+      supabase.from("students").select("*", { count: "exact", head: true }),
+      supabase.from("students").select("*", { count: "exact", head: true }).eq("status", "active"),
+      supabase.from("courses").select("*", { count: "exact", head: true }),
+      supabase.from("instructors").select("*", { count: "exact", head: true }),
+      supabase.from("attendance").select("status"),
+      supabase.from("students").select("*", { count: "exact", head: true }).eq("face_enrolled", true)
+    ]);
+
+    const totalPresent = attendance?.filter((a: any) => a.status === "present").length ?? 0;
+    const totalRecords = attendance?.length ?? 0;
+    const overallRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
+
+    return {
+      totalStudents: totalStudents ?? 0,
+      activeStudents: activeStudents ?? 0,
+      totalCourses: totalCourses ?? 0,
+      totalTeachers: totalTeachers ?? 0,
+      attendanceRate: overallRate,
+      faceEnrolled: enrolledFace ?? 0,
+      activeSessions: 3,
+    };
+  }
 };
 
 export const getTeacherStats = async (): Promise<TeacherStats> => {
-  const [{ count: totalStudents }, { count: myClasses }, { data: todayAttendance }] = await Promise.all([
-    supabase.from("students").select("*", { count: "exact", head: true }),
-    supabase.from("courses").select("*", { count: "exact", head: true }),
-    supabase.from("attendance").select("status").eq("date_attended", new Date().toISOString().split("T")[0])
-  ]);
+  try {
+    const [{ count: totalStudents }, { count: myClasses }, { data: todayAttendance }] = await Promise.all([
+      supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "student"),
+      supabase.from("courses").select("*", { count: "exact", head: true }),
+      supabase.from("attendance").select("status").eq("date_attended", new Date().toISOString().split("T")[0])
+    ]);
 
-  const totalPresent = todayAttendance?.filter((a: any) => a.status === "present").length ?? 0;
-  const totalRecords = todayAttendance?.length ?? 0;
-  const todayRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
+    const totalPresent = todayAttendance?.filter((a: any) => a.status === "present").length ?? 0;
+    const totalRecords = todayAttendance?.length ?? 0;
+    const todayRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
 
-  return {
-    myClasses: myClasses ?? 0,
-    totalStudents: totalStudents ?? 0,
-    todayAttendanceRate: todayRate,
-    nextClass: "2:00 PM",
-  };
+    return {
+      myClasses: myClasses ?? 0,
+      totalStudents: totalStudents ?? 0,
+      todayAttendanceRate: todayRate,
+      nextClass: "2:00 PM",
+    };
+  } catch (err) {
+    console.warn("Falling back to legacy stats query in getTeacherStats", err);
+    const [{ count: totalStudents }, { count: myClasses }, { data: todayAttendance }] = await Promise.all([
+      supabase.from("students").select("*", { count: "exact", head: true }),
+      supabase.from("courses").select("*", { count: "exact", head: true }),
+      supabase.from("attendance").select("status").eq("date_attended", new Date().toISOString().split("T")[0])
+    ]);
+
+    const totalPresent = todayAttendance?.filter((a: any) => a.status === "present").length ?? 0;
+    const totalRecords = todayAttendance?.length ?? 0;
+    const todayRate = totalRecords > 0 ? ((totalPresent / totalRecords) * 100).toFixed(1) : "0.0";
+
+    return {
+      myClasses: myClasses ?? 0,
+      totalStudents: totalStudents ?? 0,
+      todayAttendanceRate: todayRate,
+      nextClass: "2:00 PM",
+    };
+  }
 };
 
 export const getStudentStats = async (): Promise<StudentStats> => {
@@ -500,6 +706,35 @@ export const getStudentStats = async (): Promise<StudentStats> => {
   // Fallback: direct Supabase select (dev only, when backend is not running)
   const { data: { session } } = await supabase.auth.getSession();
   const email = session?.user?.email;
+
+  if (email) {
+    try {
+      const { data: user, error } = await supabase
+        .from("users")
+        .select(`
+          id, email, full_name, branch, phone, avatar_url, role, is_active,
+          student_details ( sbrn, semester, session, attendance_rate ),
+          face_embeddings ( id )
+        `)
+        .eq("email", email)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (user) {
+        const details = user.student_details?.[0] || {};
+        const faceEnrolled = user.face_embeddings ? (Array.isArray(user.face_embeddings) ? user.face_embeddings.length > 0 : !!user.face_embeddings) : false;
+        return {
+          attendanceRate: Number(details.attendance_rate) || 0,
+          attendedClasses: 23,
+          totalClasses: 24,
+          gpa: "3.8",
+          faceEnrolled: faceEnrolled,
+        };
+      }
+    } catch (err) {
+      console.warn("[getStudentStats] Direct users/student_details query failed, falling back to legacy students table", err);
+    }
+  }
 
   const { data: student } = email
     ? await supabase.from("students").select("*").eq("email", email).maybeSingle()
