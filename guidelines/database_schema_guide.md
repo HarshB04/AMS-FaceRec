@@ -1,5 +1,11 @@
 # 📦 AMS-FaceRec — Database Schema Guide
 
+> [!WARNING]
+> **Schema Model Disclaimer:**
+> The entity diagrams and raw table snippets documented in this guide show the legacy relational model. To support robust permissions, prevent JWT role-metadata spoofing, and unify identities under Supabase Auth, the production system has been fully restructured.
+>
+> Please refer directly to **[supabase/schema.sql](file:///c:/ME/__Marjor/AMS-FaceRec/supabase/schema.sql)** for the current, production-grade **unified `public.users` base table** and its **`student_details`**, **`teacher_details`**, and **`admin_details`** 1:1 extension models.
+
 > This document explains the database schema used in **schema.sql**, why each table exists, and how the frontend consumes the data.
 
 ---

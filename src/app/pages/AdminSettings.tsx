@@ -32,7 +32,7 @@ function loadDefaults(): SettingsState {
     semesterEnd: "2026-05-30",
     lateThreshold: 15,
     minAttendance: 75,
-    flaskApiUrl: "http://localhost:5000",
+    flaskApiUrl: "http://localhost:5001",
     confidenceThreshold: 70,
     emailAlerts: true,
     lowAttendanceAlert: true,
@@ -255,7 +255,7 @@ export function AdminSettings() {
             value={form.flaskApiUrl}
             onChange={(e) => update("flaskApiUrl", e.target.value)}
             className={inputCls}
-            placeholder="http://localhost:5000"
+            placeholder="http://localhost:5001"
           />
         </Field>
         <Field

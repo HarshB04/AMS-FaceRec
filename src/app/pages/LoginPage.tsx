@@ -49,7 +49,7 @@ export function LoginPage() {
 
       if (role === "student") {
         // Resolve SBRN → email via the backend (keeps Edge Function calls server-side)
-        const BACKEND = (import.meta.env.VITE_BACKEND_URL as string) || "http://localhost:5000";
+        const BACKEND = (import.meta.env.VITE_BACKEND_URL as string) || "http://localhost:5003";
         const res = await fetch(`${BACKEND}/api/auth/lookup-sbrn`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

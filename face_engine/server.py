@@ -32,7 +32,7 @@ cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 facedetect = cv2.CascadeClassifier(cascade_path)
 
 # Express backend URL — attendance is logged via the backend, NOT directly to Supabase
-EXPRESS_URL = os.environ.get("EXPRESS_BACKEND_URL", "http://localhost:5000")
+EXPRESS_URL = os.environ.get("EXPRESS_BACKEND_URL", "http://localhost:5003")
 FACE_ENGINE_SECRET = os.environ.get("FACE_ENGINE_SECRET", "")
 
 # Shared state

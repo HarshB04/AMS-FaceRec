@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) || "http://localhost:5000";
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) || "http://localhost:5003";
 export const FLASK_URL = "http://localhost:5001";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
