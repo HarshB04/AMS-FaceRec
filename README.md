@@ -1,137 +1,179 @@
 # AMS-FaceRec — Attendance Management System with Face Recognition
 
-A full-stack attendance management system using React + Vite (frontend),
-Express.js (backend), Supabase (database/auth), and a Python Flask face
-recognition engine.
+A premium, full-stack attendance management system combining a modern **React + Vite** frontend, a secure **Express.js** backend, a permanent **Supabase PostgreSQL** database, and a highly responsive **Python Flask** face recognition engine.
 
 ---
 
-## Architecture
+## 🏗️ System Architecture & Ports
+
+The system components run on coordinated local ports and communicate securely via JWT tokens and a shared engine secret:
 
 ```
-┌──────────────┐     HTTPS      ┌──────────────────┐     Service Role    ┌─────────────────┐
-│  React/Vite  │ ─────────────▶ │  Express Backend  │ ──────────────────▶ │    Supabase     │
-│  (port 5173) │ ◀─────────────  │  (port 5000)      │                     │  Auth + DB + RLS│
-└──────────────┘    JWT Bearer  └──────────────────┘                     └─────────────────┘
-                                                                                   ▲
-┌──────────────────────────────────────────────────────────────────────────────────┘
-│  Python Flask Face Engine (port 5000 → face_engine/server.py — runs separately)
+┌─────────────────┐             HTTPS             ┌──────────────────┐
+│   React / Vite  │ ────────────────────────────> │  Express Backend │
+│  (Port 5173)    │ <──────────────────────────── │  (Port 5003)     │
+└─────────────────┘           JWT Bearer          └──────────────────┘
+        ▲                                                   ▲
+        │                                                   │
+        │ Direct Stream                                     │ POST /api/attendance/log
+        │ (MJPEG feeds)                                     │ (X-Face-Engine-Secret)
+        │                                                   │
+┌─────────────────┐                                         │
+│   Face Engine   │ ────────────────────────────────────────┘
+│  (Port 5001)    │ ◀───────────────────────────────────────┐
+└─────────────────┘        GET /api/face/sync               │
+                                                            ▼
+                                                  ┌──────────────────┐
+                                                  │     Supabase     │
+                                                  │ (Auth + DB + RLS)│
+                                                  └──────────────────┘
 ```
 
-**Security model:**
-
-- The `SUPABASE_SERVICE_ROLE` key lives only in `backend/.env` — never in the
-  browser.
-- `AuthGuard` reads role from the `profiles` table (via backend), not from JWT
-  metadata (which is spoofable).
-- RLS policies enforce all Supabase direct queries as a second layer.
+### 🔐 Security & Auth Highlights:
+* **JWT Verification:** Authentication is verified server-side. User roles are fetched directly from the secure database `profiles` table to prevent client-side JWT role-metadata spoofing.
+* **Supabase Client Strategy:** The backend uses the highly privileged `SUPABASE_SERVICE_ROLE` key to orchestrate operations while enforcing Row Level Security (RLS) policies at the database level for all user roles.
+* **Face Engine Verification:** All logging communication between the Python Face Engine and the Express backend is secured with a shared header secret (`X-Face-Engine-Secret`).
 
 ---
 
-## Quick Start
+## 🚀 Quick Start Guide
 
-### 1. Database Migration
+### 1. Supabase Database Migration
+Ensure your database tables and functions are deployed.
+* Edit and run migrations located in `supabase/migrations/` or schema file `supabase/schema.sql` in your Supabase SQL Editor.
+* If making changes to the Edge functions, redeploy with:
+  ```bash
+  npx supabase functions deploy server --no-verify-jwt
+  ```
 
-Run the following file in the **Supabase SQL Editor** (Dashboard → SQL Editor):
-
-```
-supabase/schema.sql               ← full schema (if starting fresh)
-supabase/migrations/add_profile_fields.sql  ← adds full_name, department, semester, etc.
-```
-
-### 2. Frontend
+### 2. Frontend Setup (React + Vite)
+The frontend manages user dashboards, course registration, scheduling, and admin panels.
 
 ```bash
-# Install dependencies
+# 1. Install packages
 npm install
 
-# Configure environment
-# .env is already present — edit if needed
-# VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_BACKEND_URL
+# 2. Configure environment
+# Make sure your root `.env` exists and contains correct values:
+# VITE_SUPABASE_URL=...
+# VITE_SUPABASE_PUBLISHABLE_KEY=...
+# VITE_BACKEND_URL=http://localhost:5003
 
-# Start dev server
+# 3. Import timetable data (CSV schedule)
+npm run db:import-timetable
+
+# 4. Start development server
 npm run dev
-# → http://localhost:5173
+# → Local preview: http://localhost:5173
 ```
 
-### 3. Backend (Express API)
+### 3. Backend Setup (Express.js)
+The backend acts as the gateway API, enforcing rate limits, roles, and processing logging hooks.
 
 ```bash
+# 1. Navigate to backend directory
 cd backend
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-# Configure environment
-# Edit backend/.env — fill in SUPABASE_SERVICE_ROLE
-# (Find it in: Supabase Dashboard > Project Settings > API > service_role key)
+# 3. Configure environment
+# Edit backend/.env file (use .env.example as template)
+# Ensure PORT=5003 and SMTP credentials are set up.
 
-# Start the server
-node server.js
-# or with auto-reload:
+# 4. Run development backend with hot-reload
 npm run dev
-# → http://localhost:5000
+# → Running on: http://localhost:5003
 ```
 
-### 4. Python Face Engine (optional for face recognition)
+### 4. Python Face Engine Setup
+A Python Flask server coordinates OpenCV Haar cascade face detection and KNN embeddings classification.
 
 ```bash
+# 1. Navigate to face_engine directory
 cd face_engine
+
+# 2. Activate Python Virtual Environment
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+# 3. Install packages
 pip install -r requirements.txt
+
+# 4. Start the face recognition engine
 python server.py
-# → http://localhost:5000  ← note: change backend port if running both
+# → Running on: http://localhost:5001
 ```
 
 ---
 
-## Environment Variables
+## 🗃️ Environment Configurations
 
-### Frontend (`.env`)
+### Frontend (`.env` - Root Directory)
 
-| Variable                        | Description                                            |
-| ------------------------------- | ------------------------------------------------------ |
-| `VITE_SUPABASE_URL`             | Supabase project URL                                   |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase anon/publishable key                          |
-| `VITE_BACKEND_URL`              | Express backend URL (default: `http://localhost:5000`) |
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `VITE_SUPABASE_URL` | *(your-supabase-url)* | Supabase project API endpoint |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | *(your-anon-key)* | Supabase publishable/anonymous API key |
+| `VITE_BACKEND_URL` | `http://localhost:5003` | Express API address for frontend calls |
+| `EXPRESS_BACKEND_URL` | `http://localhost:5003` | Used by Face Engine to identify target API |
 
 ### Backend (`backend/.env`)
 
-| Variable                | Description                                            |
-| ----------------------- | ------------------------------------------------------ |
-| `PORT`                  | Server port (default: `5000`)                          |
-| `SUPABASE_URL`          | Same as frontend                                       |
-| `SUPABASE_ANON_KEY`     | Supabase anon key (for JWT verification)               |
-| `SUPABASE_SERVICE_ROLE` | **Secret** — service role key (bypasses RLS)           |
-| `FRONTEND_URL`          | Allowed CORS origin (default: `http://localhost:5173`) |
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `PORT` | `5003` | Server listening port |
+| `SUPABASE_URL` | *(your-supabase-url)* | Same as frontend |
+| `SUPABASE_ANON_KEY` | *(your-anon-key)* | Same as frontend publishable key |
+| `SUPABASE_SERVICE_ROLE` | *(your-service-role)* | **Secret** Service Role Key (bypasses RLS) |
+| `FRONTEND_URL` | `http://localhost:5173` | Allowed CORS origin header |
+| `FACE_ENGINE_SECRET` | *(your-secret)* | Shared secret with the Python Face Engine |
+| `SMTP_HOST` | `smtp.gmail.com` | Email host for enrollment/approval logs |
+| `SMTP_PORT` | `587` | Email connection port |
+| `SMTP_USER` | *(your-email)* | SMTP user email address |
+| `SMTP_PASS` | *(your-app-password)* | App specific password |
+| `SMTP_FROM_NAME` | `SunnyAttend` | Outgoing email sender display name |
 
 ---
 
-## Backend API Endpoints
+## 📡 Backend API Endpoints
 
-### Auth
+### 🔑 Authentication (`/api/auth`)
+* `POST /api/auth/register` — Self-registration for students.
+* `POST /api/auth/admin/login` — Admin login panel.
+* `POST /api/auth/teacher/login` — Teacher login panel.
+* `POST /api/auth/student/login` — Student login panel.
+* `GET /api/auth/me` — JWT verification + authoritative profile recovery.
 
-| Method | Path                      | Auth   | Description                                |
-| ------ | ------------------------- | ------ | ------------------------------------------ |
-| POST   | `/api/auth/admin/login`   | None   | Admin login — role verified server-side    |
-| POST   | `/api/auth/student/login` | None   | Student login — role verified server-side  |
-| GET    | `/api/auth/me`            | Bearer | Fetch current user's authoritative profile |
+### 👥 Student Management (`/api/students`)
+* `GET /api/students/all` — List all registered students (Admin only).
+* `POST /api/students/register` — Direct administrative student creation.
+* `GET /api/students/profile` — Read active student profile.
+* `PUT /api/students/:id` — Update profile metadata (Admin only).
+* `DELETE /api/students/:id` — Remote delete student profile and authentication details.
 
-### Students
+### 🛡️ Approvals & Admin Roles (`/api/admin`)
+* `GET /api/admin/pending-users` — Retrieve self-registered accounts awaiting approval.
+* `GET /api/admin/all-registration-users` — Retrieve complete list of registered users.
+* `POST /api/admin/approve/:id` — Approve pending registration (Triggers notification email).
+* `POST /api/admin/reject/:id` — Reject/purge registration records.
 
-| Method | Path                     | Auth    | Description                                   |
-| ------ | ------------------------ | ------- | --------------------------------------------- |
-| POST   | `/api/students/register` | Admin   | Create auth user + profiles + students record |
-| GET    | `/api/students/profile`  | Student | Get own profile + attendance stats            |
-| GET    | `/api/students/all`      | Admin   | List all students                             |
-| PUT    | `/api/students/:id`      | Admin   | Update student profile                        |
-| DELETE | `/api/students/:id`      | Admin   | Delete student + auth user                    |
+### 📸 Face Enroll & Sync (`/api/face`)
+* `GET /api/face/sync` — Synchronize local KNN model data with backend DB.
+* `POST /api/face/sync` — Upload newly captured face embeddings to Supabase storage.
+* `POST /api/face/enroll-complete` — Finalize student enrollment pipeline.
+
+### 📝 Attendance Tracking (`/api/attendance`)
+* `POST /api/attendance/log` — Secure logger. Used by the Python Face Engine to post scans.
 
 ---
 
-## Roles
+## 👥 Role Matrix
 
-| Role      | Login                  | Capabilities                                     |
-| --------- | ---------------------- | ------------------------------------------------ |
-| `admin`   | `/login` (Admin tab)   | Full CRUD — students, teachers, courses, reports |
-| `teacher` | `/login` (Teacher tab) | View classes, mark attendance, view reports      |
-| `student` | `/login` (Student tab) | View own profile, attendance history, schedule   |
+| Role | Interface / View | Key Privileges |
+| :--- | :--- | :--- |
+| **`admin`** | `/login` (Admin tab) | Full CRUD on students, teachers, courses, class schedules, and system overrides. |
+| **`teacher`** | `/login` (Teacher tab) | Monitor live dashboard, access class rosters, manual attendance editing, and data export. |
+| **`student`** | `/login` (Student tab) | View personalized calendar/schedule, review historical attendance logs, and edit personal profiles. |
