@@ -14,7 +14,7 @@ import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
-const emptyForm = { name: "", email: "" };
+const emptyForm = { name: "", email: "", password: "", confirmPassword: "" };
 
 export function AdminTeachers() {
   const [instructors, setInstructors] = useState<Instructor[]>([]);
@@ -70,10 +70,22 @@ export function AdminTeachers() {
 
   const handleSave = async () => {
     if (!form.name || !form.email) return;
+
+    if (!editInstr) {
+      if (!form.password || form.password.length < 6) {
+        alert("Password must be at least 6 characters long.");
+        return;
+      }
+      if (form.password !== form.confirmPassword) {
+        alert("Passwords do not match.");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       if (editInstr) {
-        await updateInstructor(editInstr.id, form);
+        await updateInstructor(editInstr.id, { name: form.name, email: form.email });
       } else {
         await createInstructor(form);
       }
@@ -247,6 +259,28 @@ export function AdminTeachers() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
               />
             </div>
+            {!editInstr && (
+              <>
+                <div className="space-y-2">
+                  <Label>Password</Label>
+                  <Input
+                    type="password"
+                    placeholder="Set a password for the teacher"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Confirm Password</Label>
+                  <Input
+                    type="password"
+                    placeholder="Confirm the password"
+                    value={form.confirmPassword}
+                    onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeModal}>Cancel</Button>

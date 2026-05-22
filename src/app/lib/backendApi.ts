@@ -74,6 +74,15 @@ async function backendFetch<T>(
   return body as T;
 }
 
+// ── Instructors ───────────────────────────────────────────────────────────────
+
+export const backendRegisterInstructor = async (payload: { name: string; email: string; password?: string }) => {
+  return backendFetch("/api/instructors/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+};
+
 // ── Auth API ──────────────────────────────────────────────────────────────────
 
 /**

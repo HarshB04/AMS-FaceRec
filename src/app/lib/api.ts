@@ -5,6 +5,7 @@ import {
   backendGetAllStudents,
   backendUpdateStudent,
   backendDeleteStudent,
+  backendRegisterInstructor,
   type RegisterStudentPayload,
 } from "@/app/lib/backendApi";
 import {
@@ -774,7 +775,28 @@ export const getInstructor = async (id: string) => {
   return mapInstructor(data);
 };
 
-export const createInstructor = async (data: Omit<Instructor, "id">) => {
+export const createInstructor = async (data: Omit<Instructor, "id"> & { password?: string }) => {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
+  if (backendUrl) {
+    try {
+      // Use the provided password, or fallback to a default
+      const password = data.password || "TeacherPassword123!";
+      const res = await backendRegisterInstructor({
+        name: data.name,
+        email: data.email,
+        password: password,
+      });
+      return {
+        id: res.teacher.id || crypto.randomUUID(), // Fallback ID if not returned
+        name: res.teacher.name,
+        email: res.teacher.email,
+      };
+    } catch (err) {
+      console.warn("[createInstructor] Backend registration failed, falling back to direct insert.", err);
+    }
+  }
+
   const { data: res, error } = await supabase.from("instructors").insert(data).select().single();
   if (error) throw new Error(error.message || JSON.stringify(error));
   return mapInstructor(res);

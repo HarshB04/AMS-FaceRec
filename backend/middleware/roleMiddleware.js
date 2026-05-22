@@ -28,7 +28,12 @@ function requireRole(requiredRole) {
         });
       }
 
-      if (user.role !== requiredRole) {
+      // Check if requiredRole is an array, otherwise compare directly
+      const hasRole = Array.isArray(requiredRole) 
+        ? requiredRole.includes(user.role) 
+        : user.role === requiredRole;
+
+      if (!hasRole) {
         return res.status(403).json({
           error: "Forbidden",
           message: `This endpoint requires role '${requiredRole}'. Your role is '${user.role}'.`,

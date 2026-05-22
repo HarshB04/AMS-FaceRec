@@ -51,3 +51,13 @@ CLAUDE.md
 # Old / Deprecated
 src/components/ui/
 backend/scripts/
+
+# Documentation
+docs/
+
+# IDE & Planning
+.cursor/
+.github/
+.planning/
+.vscode/
+SHADCN_TODO.md

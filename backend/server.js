@@ -10,6 +10,7 @@ const registrationRoutes = require("./routes/registrationRoutes");
 const approvalRoutes = require("./routes/approvalRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const faceRoutes = require("./routes/faceRoutes");
+const instructorRoutes = require("./routes/instructorRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -45,10 +46,10 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// Global rate limiter — 100 requests per 15 minutes per IP
+// Global rate limiter — 1000 requests per 15 minutes per IP (increased for testing)
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too Many Requests", message: "Please slow down and try again later." },
@@ -117,6 +118,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/admin", approvalRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/face", faceRoutes);
+app.use("/api/instructors", instructorRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 

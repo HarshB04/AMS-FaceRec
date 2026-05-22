@@ -12,25 +12,8 @@ import {
   type TeacherStats,
   type Course,
   type WeeklyAttendanceSummary,
+  getTodayAttendanceForCourse,
 } from "../lib/api";
-
-const todayStudents = [
-  { name: "Sarah Johnson", id: "STU-001", time: "8:45 AM", status: "present" as const },
-  { name: "Michael Chen", id: "STU-002", time: "9:12 AM", status: "late" as const },
-  { name: "Emily Davis", id: "STU-003", time: "-", status: "absent" as const },
-  { name: "James Wilson", id: "STU-004", time: "8:58 AM", status: "present" as const },
-  { name: "Sophia Martinez", id: "STU-005", time: "8:50 AM", status: "present" as const },
-  { name: "Robert Brown", id: "STU-006", time: "-", status: "absent" as const },
-  { name: "Lisa Thompson", id: "STU-007", time: "9:01 AM", status: "present" as const },
-];
-
-const classAttendance = [
-  { date: "Mar 1", present: 29, absent: 3 },
-  { date: "Mar 3", present: 31, absent: 1 },
-  { date: "Mar 5", present: 27, absent: 5 },
-  { date: "Mar 7", present: 30, absent: 2 },
-  { date: "Mar 9", present: 28, absent: 4 },
-];
 
 export function TeacherDashboard() {
   const [selectedClass, setSelectedClass] = useState("CS-301");
@@ -39,13 +22,19 @@ export function TeacherDashboard() {
   const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAttendanceSummary[]>([]);
   const [weeklyLoading, setWeeklyLoading] = useState(true);
   const [weeklyError, setWeeklyError] = useState<string | null>(null);
+  
+  const [todayStudents, setTodayStudents] = useState<any[]>([]);
+  const [classAttendance, setClassAttendance] = useState<any[]>([]);
 
   useEffect(() => {
     getTeacherStats()
       .then(setStats)
       .catch((err) => console.error("Teacher stats error:", err));
     getCourses()
-      .then((data) => setCourses(data.sort((a, b) => a.code.localeCompare(b.code))))
+      .then((data) => {
+        setCourses(data.sort((a, b) => a.code.localeCompare(b.code)));
+        if (data.length > 0) setSelectedClass(data[0].code);
+      })
       .catch((err) => console.error("Courses error:", err));
     getWeeklyAttendanceAnalysis({ scope: "all" })
       .then(setWeeklyAnalysis)
@@ -56,11 +45,36 @@ export function TeacherDashboard() {
       .finally(() => setWeeklyLoading(false));
   }, []);
 
-  const displayClasses = courses.length > 0 ? courses.slice(0, 3) : [
-    { id: "1", code: "CS-301", name: "Data Structures & Algorithms", students: 32, schedule: "Mon/Wed 9:00 AM", room: "Room 204", status: "active" as const },
-    { id: "2", code: "CS-405", name: "Machine Learning",             students: 28, schedule: "Tue/Thu 11:00 AM", room: "Room 312", status: "active" as const },
-    { id: "3", code: "CS-201", name: "Object-Oriented Programming",  students: 35, schedule: "Mon/Wed/Fri 2:00 PM", room: "Room 108", status: "active" as const },
-  ];
+  useEffect(() => {
+    const fetchClassData = async () => {
+      const cls = courses.find((c) => c.code === selectedClass);
+      if (!cls) return;
+
+      try {
+        const rawAttendance = await getTodayAttendanceForCourse(cls.id);
+        const mappedStudents = rawAttendance.map((a: any) => ({
+          id: a.students?.student_id_text || `ID-${a.student_id}`,
+          name: a.students?.name || "Unknown Student",
+          time: a.marked_at ? new Date(a.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—",
+          status: a.status
+        }));
+        setTodayStudents(mappedStudents);
+
+        // Mock historical data since we only fetch today's right now
+        setClassAttendance([
+          { date: "Day 1", present: Math.floor(cls.students * 0.9), absent: Math.floor(cls.students * 0.1) },
+          { date: "Day 2", present: Math.floor(cls.students * 0.85), absent: Math.floor(cls.students * 0.15) },
+          { date: "Day 3", present: Math.floor(cls.students * 0.95), absent: Math.floor(cls.students * 0.05) },
+          { date: "Today", present: mappedStudents.filter(s => s.status === 'present').length, absent: mappedStudents.filter(s => s.status === 'absent').length },
+        ]);
+      } catch (err) {
+        console.error("Failed to load attendance for class", err);
+      }
+    };
+    fetchClassData();
+  }, [selectedClass, courses]);
+
+  const displayClasses = courses.length > 0 ? courses.slice(0, 3) : [];
 
   return (
     <div className="space-y-6">

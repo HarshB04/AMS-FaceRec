@@ -24,7 +24,7 @@ async function logAttendance(req, res) {
       console.error("[attendanceController] FATAL: FACE_ENGINE_SECRET is not configured in backend environment.");
       return res.status(500).json({ error: "Server Configuration Error", message: "Face engine secret not configured." });
     }
-    
+
     const incoming = req.headers["x-face-engine-secret"] || "";
     if (incoming !== FACE_ENGINE_SECRET) {
       return res.status(401).json({
@@ -226,30 +226,20 @@ async function manualLogAttendance(req, res) {
     const normalizedSbrn = sbrn.trim().toUpperCase();
     const attendanceDate = date || new Date().toISOString().split("T")[0];
 
-    // 1. Fetch student
+    // 1. Fetch student from the `students` table which has the correct bigint `id`
     const { data: studentRecord, error: studentError } = await supabaseAdmin
-      .from("student_details")
-      .select(`
-        user_id,
-        users!inner(
-          full_name,
-          email,
-          is_active,
-          branch,
-          face_embeddings(id)
-        )
-      `)
-      .eq("sbrn", normalizedSbrn)
+      .from("students")
+      .select("id, name, email, status, branch, face_enrolled")
+      .eq("student_id_text", normalizedSbrn)
       .maybeSingle();
 
     if (studentError) throw new Error(studentError.message);
 
-    if (!studentRecord || !studentRecord.users) {
+    if (!studentRecord) {
       return res.status(404).json({ error: "Not Found", message: `Student '${normalizedSbrn}' not found.` });
     }
 
-    const studentUser = studentRecord.users;
-    if (!studentUser.is_active) {
+    if (studentRecord.status !== "active") {
       return res.status(403).json({ error: "Inactive", message: `Student '${normalizedSbrn}' is not active.` });
     }
 
@@ -261,24 +251,24 @@ async function manualLogAttendance(req, res) {
       let query = supabaseAdmin.from("courses").select("id").eq("course_code", courseLookup);
       if (department) query = query.eq("department", String(department).trim());
       if (semester) query = query.eq("semester", String(semester).trim());
-      
+
       const { data: codeMatches, error: codeError } = await query.limit(1);
       if (codeError) throw new Error(codeError.message);
       if (codeMatches?.[0]) courseId = codeMatches[0].id;
     }
 
-    if (!courseId && studentUser.branch) {
+    if (!courseId && studentRecord.branch) {
       const { data: courseMatches } = await supabaseAdmin
         .from("courses")
         .select("id")
-        .eq("course_name", studentUser.branch)
+        .eq("course_name", studentRecord.branch)
         .limit(1);
       if (courseMatches?.[0]) courseId = courseMatches[0].id;
     }
 
     // 3. Insert attendance
     const attendancePayload = {
-      student_id: studentRecord.user_id,
+      student_id: studentRecord.id,
       date_attended: attendanceDate,
       status: "present",
     };
@@ -296,7 +286,7 @@ async function manualLogAttendance(req, res) {
         return res.status(200).json({
           success: true,
           message: `Attendance already recorded for ${normalizedSbrn} today.`,
-          student_name: studentUser.full_name,
+          student_name: studentRecord.name,
           sbrn: normalizedSbrn,
           already_logged: true,
         });
@@ -306,8 +296,8 @@ async function manualLogAttendance(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: `Attendance marked present for ${studentUser.full_name}.`,
-      student_name: studentUser.full_name,
+      message: `Attendance marked present for ${studentRecord.name}.`,
+      student_name: studentRecord.name,
       sbrn: normalizedSbrn,
       date: attendanceDate,
       time: time || null,
